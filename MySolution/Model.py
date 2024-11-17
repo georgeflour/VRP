@@ -78,6 +78,15 @@ class Model:
             for j in range(self.total_nodes):
                 if i != j:
                     dist_From_I_to_J = self.distance(self.all_nodes[i], self.all_nodes[j])
-                    self.distance_matrix[i][j] = dist_From_I_to_J
+                    self.distance_matrix[i][j] = dist_From_I_to_J 
         return self.distance_matrix
 
+
+class Node:
+    def __init__(self, idd, xx, yy, dem):
+        self.x = xx
+        self.y = yy
+        self.ID = idd
+        self.demand = dem
+        self.isRouted = False
+        
