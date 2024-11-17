@@ -1,8 +1,8 @@
 from Model import Model
 
 # Αρχικοποίηση του μοντέλου και των δεδομένων
-model = Model('/Users/giorgosphlourakes/Desktop/MEDEBE/MEDEBE/MySolution/Instance.txt')
-all_nodes, capacity, empty_vehicle_weight, depot = Model.load_model('/Users/giorgosphlourakes/Desktop/MEDEBE/MEDEBE/MySolution/Instance.txt')
+model = Model('MEDEBE/MySolution/Instance.txt')
+all_nodes, capacity, empty_vehicle_weight, depot = Model.load_model('MEDEBE/MySolution/Instance.txt')
 total_nodes = len(all_nodes)
 total_demand = sum(node.demand for node in all_nodes if node.ID != depot.ID)
 distance_matrix = model.calculate_distance_matrix()
