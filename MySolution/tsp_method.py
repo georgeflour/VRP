@@ -1,8 +1,8 @@
 from Model import Model
 
 # Αρχικοποίηση του μοντέλου και των δεδομένων
-model = Model('MEDEBE/MySolution/Instance.txt')
-all_nodes, capacity, empty_vehicle_weight, depot = Model.load_model('MEDEBE/MySolution/Instance.txt')
+model = Model('Instance.txt')
+all_nodes, capacity, empty_vehicle_weight, depot = Model.load_model('Instance.txt')
 total_nodes = len(all_nodes)
 total_demand = sum(node.demand for node in all_nodes if node.ID != depot.ID)
 distance_matrix = model.calculate_distance_matrix()
@@ -74,7 +74,7 @@ def tsp_method(distance_matrix, all_nodes, total_nodes, capacity):
     return sol
 
 # Μέθοδος για αποθήκευση της λύσης σε αρχείο
-def save_solution_to_file(solution, filename='MEDEBE/MySolution/solution.txt'):
+def save_solution_to_file(solution, filename='solution.txt'):
     with open(filename, 'w') as file:
         file.write(f"Cost:\n{solution.total_cost}\n")
         file.write("Routes:\n")
