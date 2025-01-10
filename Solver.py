@@ -187,52 +187,59 @@ class Solver:
         random.seed(1)
 
         self.bestSolution = self.cloneSolution(self.sol)
-        terminationCondition = False
-        localSearchIterator = 0
 
         rm = RelocationMove()
         sm = SwapMove()
         top = TwoOptMove()
 
-        while terminationCondition is False:
-            operator = random.randint(0,2)
-            self.InitializeOperators(rm, sm, top)
-            
+        for i in range(60):  # Iterate 100 times
+            if (i<=40):
+                operator = random.randint(0, 2)  # Select a random operator
+            else:
+                operator = random.randint(0, 1)
+            terminationCondition = False  # Reset termination condition for each operator
 
-            # Relocations
-            if operator == 0:
-                self.FindBestRelocationMove(rm)
-                if rm.originRoutePosition is not None:
-                    if rm.moveCost < 0:
-                        self.ApplyRelocationMove(rm)
-                    
-            # Swaps
-            elif operator == 1:
-                self.FindBestSwapMove(sm)
-                if sm.positionOfFirstRoute is not None:
-                    if sm.moveCost < 0:
-                        self.ApplySwapMove(sm)
-                    
-            elif operator == 2:
-                self.FindBestTwoOptMove(top)
-                if top.positionOfFirstRoute is not None:
-                    if top.moveCost < 0:
+            while not terminationCondition:  # Perform local search until no improvement
+                self.InitializeOperators(rm, sm, top)
+
+                # Relocations
+                if operator == 0:
+                    self.FindBestRelocationMove(rm)
+                    if rm.originRoutePosition is not None:
+                        if rm.moveCost < 0:
+                            self.ApplyRelocationMove(rm)
+                        else:
+                            terminationCondition = True
+
+                # Swaps
+                elif operator == 1:
+                    self.FindBestSwapMove(sm)
+                    if sm.positionOfFirstRoute is not None:
+                        if sm.moveCost < 0:
+                            self.ApplySwapMove(sm)
+                        else:
+                            terminationCondition = True
+
+                # Two-opt
+                elif operator == 2:
+                    self.FindBestTwoOptMove(top)
+                    if top.positionOfFirstRoute is not None and top.moveCost < 0:
                         self.ApplyTwoOptMove(top)
                     
-            self.sol.total_cost = self.CalculateTotalCost(self.sol)
-            self.TestSolution()
+                        terminationCondition = True
+                    else:
+                        terminationCondition = True
 
-            if (self.sol.total_cost < self.bestSolution.total_cost):
-                self.bestSolution = self.cloneSolution(self.sol)
-            print(localSearchIterator)
-            localSearchIterator = localSearchIterator + 1
-            if localSearchIterator == 1000:
-                terminationCondition = True
-            
+                self.sol.total_cost = self.CalculateTotalCost(self.sol)
+                self.TestSolution()
+                print(operator )
+                if self.sol.total_cost < self.bestSolution.total_cost:
+                    self.bestSolution = self.cloneSolution(self.sol)
 
-
+            print(f"Iteration {i}, Operator {operator}, Best Solution Cost: {self.bestSolution.total_cost}")
 
         self.sol = self.bestSolution
+
 
     def FindBestRelocationMove(self, rm):
         for originRouteIndex in range(0, len(self.sol.routes)):
@@ -457,7 +464,9 @@ class Solver:
                 for nodeInd1 in range(0, len(rt1.sequenceOfNodes) - 1):
                     start2 = 0
                     if rt1 == rt2:
+                        # Avoid overlapping segments within the same route
                         start2 = nodeInd1 + 2
+
                     for nodeInd2 in range(start2, len(rt2.sequenceOfNodes) - 1):
                         # Store original segments
                         original_rt1_segment = rt1.sequenceOfNodes[nodeInd1 + 1:]
@@ -467,22 +476,32 @@ class Solver:
                         rt1.sequenceOfNodes = rt1.sequenceOfNodes[:nodeInd1 + 1] + original_rt2_segment
                         rt2.sequenceOfNodes = rt2.sequenceOfNodes[:nodeInd2 + 1] + original_rt1_segment
 
-                        # Recalculate the cost of both routes
+                        # Recalculate the cost and load of both routes
                         first_route_cost, first_route_load = self.calculate_route_details(rt1.sequenceOfNodes, self.empty_vehicle_weight)
                         second_route_cost, second_route_load = self.calculate_route_details(rt2.sequenceOfNodes, self.empty_vehicle_weight)
 
-                        # Calculate the cost change
+                        # Check for load violations
+                        if first_route_load > self.capacity or second_route_load > self.capacity:
+                            # Restore original segments and continue
+                            rt1.sequenceOfNodes = rt1.sequenceOfNodes[:nodeInd1 + 1] + original_rt1_segment
+                            rt2.sequenceOfNodes = rt2.sequenceOfNodes[:nodeInd2 + 1] + original_rt2_segment
+                            continue
+
+                        # Calculate cost change based on tn_km
                         costChangeFirstRoute = first_route_cost - rt1.cost
                         costChangeSecondRoute = second_route_cost - rt2.cost
                         moveCost = costChangeFirstRoute + costChangeSecondRoute
 
-                        # Revert to the original routes
+                        # Restore original segments
                         rt1.sequenceOfNodes = rt1.sequenceOfNodes[:nodeInd1 + 1] + original_rt1_segment
                         rt2.sequenceOfNodes = rt2.sequenceOfNodes[:nodeInd2 + 1] + original_rt2_segment
-
+                        # Debugging: Check evaluated nodes and cost change
+                        
                         # Update the best move if this one is better
                         if moveCost < top.moveCost:
+
                             self.StoreBestTwoOptMove(rtInd1, rtInd2, nodeInd1, nodeInd2, moveCost, top)
+
 
 
     def CapacityIsViolated(self, rt1, nodeInd1, rt2, nodeInd2):
@@ -544,6 +563,7 @@ class Solver:
 
             self.UpdateRouteCostAndLoad(rt1)
             self.UpdateRouteCostAndLoad(rt2)
+            
 
         self.sol.total_cost += top.moveCost
 
@@ -604,5 +624,6 @@ class Solver:
                                 best_insertion.total_cost = trialCost
                     else:
                         continue
+
 
 
