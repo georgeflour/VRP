@@ -451,38 +451,36 @@ class Solver:
 
     def FindBestTwoOptMove(self, top):
         for rtInd1 in range(0, len(self.sol.routes)):
-            rt1:Route = self.sol.routes[rtInd1]
+            rt1: Route = self.sol.routes[rtInd1]
             for rtInd2 in range(rtInd1, len(self.sol.routes)):
-                rt2:Route = self.sol.routes[rtInd2]
+                rt2: Route = self.sol.routes[rtInd2]
                 for nodeInd1 in range(0, len(rt1.sequenceOfNodes) - 1):
                     start2 = 0
-                    if (rt1 == rt2):
+                    if rt1 == rt2:
                         start2 = nodeInd1 + 2
                     for nodeInd2 in range(start2, len(rt2.sequenceOfNodes) - 1):
-                        moveCost = 10 ** 9
+                        # Store original segments
+                        original_rt1_segment = rt1.sequenceOfNodes[nodeInd1 + 1:]
+                        original_rt2_segment = rt2.sequenceOfNodes[nodeInd2 + 1:]
 
-                        A = rt1.sequenceOfNodes[nodeInd1]
-                        B = rt1.sequenceOfNodes[nodeInd1 + 1]
-                        K = rt2.sequenceOfNodes[nodeInd2]
-                        L = rt2.sequenceOfNodes[nodeInd2 + 1]
+                        # Perform two-opt swap
+                        rt1.sequenceOfNodes = rt1.sequenceOfNodes[:nodeInd1 + 1] + original_rt2_segment
+                        rt2.sequenceOfNodes = rt2.sequenceOfNodes[:nodeInd2 + 1] + original_rt1_segment
 
-                        if rt1 == rt2:
-                            if nodeInd1 == 0 and nodeInd2 == len(rt1.sequenceOfNodes) - 2:
-                                continue
-                            costAdded = self.matrix[A.ID][K.ID] + self.matrix[B.ID][L.ID]
-                            costRemoved = self.matrix[A.ID][B.ID] + self.matrix[K.ID][L.ID]
-                            moveCost = costAdded - costRemoved
-                        else:
-                            if nodeInd1 == 0 and nodeInd2 == 0:
-                                continue
-                            if nodeInd1 == len(rt1.sequenceOfNodes) - 2 and  nodeInd2 == len(rt2.sequenceOfNodes) - 2:
-                                continue
+                        # Recalculate the cost of both routes
+                        first_route_cost, first_route_load = self.calculate_route_details(rt1.sequenceOfNodes, self.empty_vehicle_weight)
+                        second_route_cost, second_route_load = self.calculate_route_details(rt2.sequenceOfNodes, self.empty_vehicle_weight)
 
-                            if self.CapacityIsViolated(rt1, nodeInd1, rt2, nodeInd2):
-                                continue
-                            costAdded = self.matrix[A.ID][L.ID] + self.matrix[B.ID][K.ID]
-                            costRemoved = self.matrix[A.ID][B.ID] + self.matrix[K.ID][L.ID]
-                            moveCost = costAdded - costRemoved
+                        # Calculate the cost change
+                        costChangeFirstRoute = first_route_cost - rt1.cost
+                        costChangeSecondRoute = second_route_cost - rt2.cost
+                        moveCost = costChangeFirstRoute + costChangeSecondRoute
+
+                        # Revert to the original routes
+                        rt1.sequenceOfNodes = rt1.sequenceOfNodes[:nodeInd1 + 1] + original_rt1_segment
+                        rt2.sequenceOfNodes = rt2.sequenceOfNodes[:nodeInd2 + 1] + original_rt2_segment
+
+                        # Update the best move if this one is better
                         if moveCost < top.moveCost:
                             self.StoreBestTwoOptMove(rtInd1, rtInd2, nodeInd1, nodeInd2, moveCost, top)
 
@@ -606,4 +604,5 @@ class Solver:
                                 best_insertion.total_cost = trialCost
                     else:
                         continue
+
 
