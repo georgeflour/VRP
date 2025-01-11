@@ -95,12 +95,13 @@ class Solver:
         
         
         self.LocalSearch()
-        
+
 
 
         self.ReportSolution(self.sol)
         self.save_solution_to_file(self.sol)
         SolDrawer.draw(0, self.sol, self.allNodes)
+        return(self.sol)
 
     def constructor(self):
         sol = Solution()
@@ -185,61 +186,53 @@ class Solver:
         return cloned
     def LocalSearch(self):
         random.seed(1)
-
+        temperature = 1000
+        cooling_rate = 0.995
+        min_temperature = 1e-3
+        max_iterations = 200
         self.bestSolution = self.cloneSolution(self.sol)
+        localSearchIterator=0
 
         rm = RelocationMove()
         sm = SwapMove()
         top = TwoOptMove()
 
-        for i in range(60):  # Iterate 100 times
-            if (i<=40):
-                operator = random.randint(0, 2)  # Select a random operator
-            else:
-                operator = random.randint(0, 1)
-            terminationCondition = False  # Reset termination condition for each operator
+        
 
-            while not terminationCondition:  # Perform local search until no improvement
-                self.InitializeOperators(rm, sm, top)
-
-                # Relocations
-                if operator == 0:
-                    self.FindBestRelocationMove(rm)
-                    if rm.originRoutePosition is not None:
-                        if rm.moveCost < 0:
-                            self.ApplyRelocationMove(rm)
-                        else:
-                            terminationCondition = True
-
+        while temperature > min_temperature and localSearchIterator < max_iterations:  # Perform local search until no improvement
+            self.InitializeOperators(rm, sm, top)
+            operator = random.randint(0, 2)
+            # Relocations
+            if operator == 0:
+                self.FindBestRelocationMove(rm)
+                if rm.originRoutePosition is not None:
+                    if rm.moveCost < 0 or random.random() < self.acceptance_probability(rm.moveCost, temperature):
+                        self.ApplyRelocationMove(rm)
                 # Swaps
-                elif operator == 1:
-                    self.FindBestSwapMove(sm)
-                    if sm.positionOfFirstRoute is not None:
-                        if sm.moveCost < 0:
-                            self.ApplySwapMove(sm)
-                        else:
-                            terminationCondition = True
-
+            elif operator == 1:
+                self.FindBestSwapMove(sm)
+                if sm.positionOfFirstRoute is not None:
+                    if sm.moveCost < 0 or random.random() < self.acceptance_probability(rm.moveCost, temperature):
+                        self.ApplySwapMove(sm)
                 # Two-opt
-                elif operator == 2:
-                    self.FindBestTwoOptMove(top)
-                    if top.positionOfFirstRoute is not None and top.moveCost < 0:
-                        self.ApplyTwoOptMove(top)
-                    
-                        terminationCondition = True
-                    else:
-                        terminationCondition = True
+            elif operator == 2:
+                self.FindBestTwoOptMove(top)
+                if top.positionOfFirstRoute is not None and (top.moveCost < 0 or random.random() < self.acceptance_probability(rm.moveCost, temperature)):
+                    self.ApplyTwoOptMove(top)
 
-                self.sol.total_cost = self.CalculateTotalCost(self.sol)
-                self.TestSolution()
-                print(operator )
-                if self.sol.total_cost < self.bestSolution.total_cost:
-                    self.bestSolution = self.cloneSolution(self.sol)
+            self.sol.total_cost = self.CalculateTotalCost(self.sol)
+            self.TestSolution()
 
-            print(f"Iteration {i}, Operator {operator}, Best Solution Cost: {self.bestSolution.total_cost}")
+            if self.sol.total_cost < self.bestSolution.total_cost:
+                self.bestSolution = self.cloneSolution(self.sol)
+            temperature *= cooling_rate
+            localSearchIterator += 1
+            if localSearchIterator % 100 == 0:
+                print(f"Iteration {localSearchIterator}, Temperature: {temperature:.4f}, Best Cost: {self.bestSolution.total_cost}")
 
         self.sol = self.bestSolution
-
+    def acceptance_probability(self, moveCost, temperature):
+        return min(1, math.exp(-moveCost / temperature))
 
     def FindBestRelocationMove(self, rm):
         for originRouteIndex in range(0, len(self.sol.routes)):
@@ -624,6 +617,8 @@ class Solver:
                                 best_insertion.total_cost = trialCost
                     else:
                         continue
+
+
 
 
 
