@@ -95,7 +95,7 @@ class Solver:
         
         
         self.LocalSearch()
-
+        
 
 
         self.ReportSolution(self.sol)
@@ -189,7 +189,7 @@ class Solver:
         temperature = 1000
         cooling_rate = 0.995
         min_temperature = 1e-3
-        max_iterations = 200
+        max_iterations = 400
         self.bestSolution = self.cloneSolution(self.sol)
         localSearchIterator=0
 
@@ -334,8 +334,8 @@ class Solver:
         target_rt.sequenceOfNodes.insert(rm.targetNodePosition + 1, B)
         
         # Recalculate costs for both routes
-        origin_rt.cost, origin_rt.load = self.calculate_route_details(origin_rt.sequenceOfNodes, self.empty_vehicle_weight)
-        target_rt.cost, target_rt.load = self.calculate_route_details(target_rt.sequenceOfNodes, self.empty_vehicle_weight)
+        origin_rt.total_cost, origin_rt.load = self.calculate_route_details(origin_rt.sequenceOfNodes, self.empty_vehicle_weight)
+        target_rt.total_cost, target_rt.load = self.calculate_route_details(target_rt.sequenceOfNodes, self.empty_vehicle_weight)
         
         # Update total solution cost
         self.sol.total_cost = self.CalculateTotalCost(self.sol)
@@ -481,8 +481,8 @@ class Solver:
                             continue
 
                         # Calculate cost change based on tn_km
-                        costChangeFirstRoute = first_route_cost - rt1.cost
-                        costChangeSecondRoute = second_route_cost - rt2.cost
+                        costChangeFirstRoute = first_route_cost - rt1.total_cost
+                        costChangeSecondRoute = second_route_cost - rt2.total_cost
                         moveCost = costChangeFirstRoute + costChangeSecondRoute
 
                         # Restore original segments
@@ -594,7 +594,7 @@ class Solver:
                 tn_km += distance * current_load
                 current_load -= to_node.demand if to_node != self.depot else 0
 
-            totalSolCost += route.cost
+            totalSolCost += route.total_cost
 
         
     def IdentifyMinimumCostInsertion(self, best_insertion):
@@ -619,6 +619,11 @@ class Solver:
                         continue
 
 
+
+
+
+
+    
 
 
 
