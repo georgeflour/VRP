@@ -8,6 +8,30 @@ class Solution:
         self.routes = []  # Λίστα που αποθηκεύει τις διαδρομές για κάθε φορτηγό
         self.total_cost = 0  # Συνολικό κόστος της λύσης
 
+class TripleSwapMove(object):
+    def __init__(self):
+        self.positionOfFirstRoute = None
+        self.positionOfSecondRoute = None
+        self.positionOfThirdRoute = None
+        self.positionOfFirstNode = None
+        self.positionOfSecondNode = None
+        self.positionOfThirdNode = None
+        self.moveCost = None
+        self.costChangeFirstRoute = None
+        self.costChangeSecondRoute = None
+        self.costChangeThirdRoute = None
+
+    def Initialize(self):
+        self.positionOfFirstRoute = None
+        self.positionOfSecondRoute = None
+        self.positionOfThirdRoute = None
+        self.positionOfFirstNode = None
+        self.positionOfSecondNode = None
+        self.positionOfThirdNode = None
+        self.moveCost = float('inf')
+        self.costChangeFirstRoute = None
+        self.costChangeSecondRoute = None
+        self.costChangeThirdRoute = None
 
 class RelocationMove(object):
     def __init__(self):
@@ -95,8 +119,8 @@ class Solver:
         
         
         self.LocalSearch()
-        
-
+        self.LocalSearch()
+        self.LocalSearch()
 
         self.ReportSolution(self.sol)
         self.save_solution_to_file(self.sol)
@@ -189,19 +213,20 @@ class Solver:
         temperature = 1000
         cooling_rate = 0.995
         min_temperature = 1e-3
-        max_iterations = 400
+        max_iterations = 100
         self.bestSolution = self.cloneSolution(self.sol)
         localSearchIterator=0
 
         rm = RelocationMove()
         sm = SwapMove()
         top = TwoOptMove()
+        tsm=TripleSwapMove()
 
         
 
         while temperature > min_temperature and localSearchIterator < max_iterations:  # Perform local search until no improvement
-            self.InitializeOperators(rm, sm, top)
-            operator = random.randint(0, 2)
+            self.InitializeOperators(rm, sm, top,tsm)
+            operator = random.randint(0, 3)
             # Relocations
             if operator == 0:
                 self.FindBestRelocationMove(rm)
@@ -219,12 +244,19 @@ class Solver:
                 self.FindBestTwoOptMove(top)
                 if top.positionOfFirstRoute is not None and (top.moveCost < 0 or random.random() < self.acceptance_probability(rm.moveCost, temperature)):
                     self.ApplyTwoOptMove(top)
+            elif operator == 3 and localSearchIterator % 2 == 0:
+                self.FindBestTripleSwapMove(tsm)
+                if sm.positionOfFirstRoute is not None:
+                    
+                    if sm.moveCost < 0 or random.random() < self.acceptance_probability(rm.moveCost, temperature):
+                        self.ApplyTripleSwapMove(tsm)
 
             self.sol.total_cost = self.CalculateTotalCost(self.sol)
             self.TestSolution()
 
             if self.sol.total_cost < self.bestSolution.total_cost:
                 self.bestSolution = self.cloneSolution(self.sol)
+                print(self.bestSolution.total_cost )
             temperature *= cooling_rate
             localSearchIterator += 1
             if localSearchIterator % 100 == 0:
@@ -444,10 +476,11 @@ class Solver:
 
         return total_cost
 
-    def InitializeOperators(self, rm, sm, top):
+    def InitializeOperators(self, rm, sm, top, tsm):
         rm.Initialize()
         sm.Initialize()
         top.Initialize()
+        tsm.Initialize()
 
     def FindBestTwoOptMove(self, top):
         for rtInd1 in range(0, len(self.sol.routes)):
@@ -618,12 +651,100 @@ class Solver:
                     else:
                         continue
 
+    def StoreBestTripleSwapMove(
+        self, firstRouteIndex, secondRouteIndex, thirdRouteIndex,
+        firstNodeIndex, secondNodeIndex, thirdNodeIndex,
+        moveCost, costChangeFirstRoute, costChangeSecondRoute, costChangeThirdRoute, tsm
+    ):
+        tsm.positionOfFirstRoute = firstRouteIndex
+        tsm.positionOfSecondRoute = secondRouteIndex
+        tsm.positionOfThirdRoute = thirdRouteIndex
+        tsm.positionOfFirstNode = firstNodeIndex
+        tsm.positionOfSecondNode = secondNodeIndex
+        tsm.positionOfThirdNode = thirdNodeIndex
+        tsm.moveCost = moveCost
+        tsm.costChangeFirstRoute = costChangeFirstRoute
+        tsm.costChangeSecondRoute = costChangeSecondRoute
+        tsm.costChangeThirdRoute = costChangeThirdRoute
+
+
+    def ApplyTripleSwapMove(self, tsm):
+        rt1: Route = self.sol.routes[tsm.positionOfFirstRoute]
+        rt2: Route = self.sol.routes[tsm.positionOfSecondRoute]
+        rt3: Route = self.sol.routes[tsm.positionOfThirdRoute]
+
+        # Nodes to swap
+        b1 = rt1.sequenceOfNodes[tsm.positionOfFirstNode]
+        b2 = rt2.sequenceOfNodes[tsm.positionOfSecondNode]
+        b3 = rt3.sequenceOfNodes[tsm.positionOfThirdNode]
+
+        # Perform the swap
+        rt1.sequenceOfNodes[tsm.positionOfFirstNode] = b2
+        rt2.sequenceOfNodes[tsm.positionOfSecondNode] = b3
+        rt3.sequenceOfNodes[tsm.positionOfThirdNode] = b1
+
+        # Update the routes
+        self.UpdateRouteCostAndLoad(rt1)
+        self.UpdateRouteCostAndLoad(rt2)
+        self.UpdateRouteCostAndLoad(rt3)
+
+        # Update the solution cost
+        self.sol.total_cost += tsm.moveCost
 
 
 
+    def FindBestTripleSwapMove(self, tsm):
+        for firstRouteIndex in range(len(self.sol.routes)):
+            rt1: Route = self.sol.routes[firstRouteIndex]
+            for secondRouteIndex in range(len(self.sol.routes)):
+                rt2: Route = self.sol.routes[secondRouteIndex]
+                for thirdRouteIndex in range(len(self.sol.routes)):
+                    rt3: Route = self.sol.routes[thirdRouteIndex]
 
+                    for firstNodeIndex in range(1, len(rt1.sequenceOfNodes) - 1):
+                        for secondNodeIndex in range(1, len(rt2.sequenceOfNodes) - 1):
+                            for thirdNodeIndex in range(1, len(rt3.sequenceOfNodes) - 1):
 
-    
+                                # Nodes involved in the swap
+                                a1 = rt1.sequenceOfNodes[firstNodeIndex - 1]
+                                b1 = rt1.sequenceOfNodes[firstNodeIndex]
+                                c1 = rt1.sequenceOfNodes[firstNodeIndex + 1]
 
+                                a2 = rt2.sequenceOfNodes[secondNodeIndex - 1]
+                                b2 = rt2.sequenceOfNodes[secondNodeIndex]
+                                c2 = rt2.sequenceOfNodes[secondNodeIndex + 1]
 
+                                a3 = rt3.sequenceOfNodes[thirdNodeIndex - 1]
+                                b3 = rt3.sequenceOfNodes[thirdNodeIndex]
+                                c3 = rt3.sequenceOfNodes[thirdNodeIndex + 1]
+
+                                # Check capacity constraints
+                                if (rt1.load - b1.demand + b2.demand + b3.demand > self.capacity or
+                                    rt2.load - b2.demand + b1.demand + b3.demand > self.capacity or
+                                    rt3.load - b3.demand + b1.demand + b2.demand > self.capacity):
+                                    continue
+
+                                # Calculate cost changes
+                                costRemoved1 = self.matrix[a1.ID][b1.ID] + self.matrix[b1.ID][c1.ID]
+                                costAdded1 = self.matrix[a1.ID][b2.ID] + self.matrix[b2.ID][c1.ID]
+
+                                costRemoved2 = self.matrix[a2.ID][b2.ID] + self.matrix[b2.ID][c2.ID]
+                                costAdded2 = self.matrix[a2.ID][b3.ID] + self.matrix[b3.ID][c2.ID]
+
+                                costRemoved3 = self.matrix[a3.ID][b3.ID] + self.matrix[b3.ID][c3.ID]
+                                costAdded3 = self.matrix[a3.ID][b1.ID] + self.matrix[b1.ID][c3.ID]
+
+                                costChangeFirstRoute = costAdded1 - costRemoved1
+                                costChangeSecondRoute = costAdded2 - costRemoved2
+                                costChangeThirdRoute = costAdded3 - costRemoved3
+
+                                moveCost = costChangeFirstRoute + costChangeSecondRoute + costChangeThirdRoute
+
+                                # Update the best move if it's better
+                                if moveCost < tsm.moveCost:
+                                    self.StoreBestTripleSwapMove(
+                                        firstRouteIndex, secondRouteIndex, thirdRouteIndex,
+                                        firstNodeIndex, secondNodeIndex, thirdNodeIndex,
+                                        moveCost, costChangeFirstRoute, costChangeSecondRoute, costChangeThirdRoute, tsm
+                                    )
 
