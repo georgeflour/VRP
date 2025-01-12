@@ -2,12 +2,14 @@ import random
 from Model import *
 from SolutionDrawer import *
 
+# Κλάση που ορίζει την αλληλουχία των κόμβων και το κόστος      
 class Solution:
     def __init__(self):
-        self.routes = []
-        self.total_cost = 0
+        self.routes = []  # Λίστα που αποθηκεύει τις διαδρομές για κάθε φορτηγό
+        self.total_cost = 0  # Συνολικό κόστος της λύσης
 
-class RelocationMove:
+
+class RelocationMove(object):
     def __init__(self):
         self.originRoutePosition = None
         self.targetRoutePosition = None
@@ -26,7 +28,8 @@ class RelocationMove:
         self.total_costChangeTargetRt = None
         self.moveCost = 10 ** 9
 
-class SwapMove:
+
+class SwapMove(object):
     def __init__(self):
         self.positionOfFirstRoute = None
         self.positionOfSecondRoute = None
@@ -35,7 +38,6 @@ class SwapMove:
         self.total_costChangeFirstRt = None
         self.total_costChangeSecondRt = None
         self.moveCost = None
-
     def Initialize(self):
         self.positionOfFirstRoute = None
         self.positionOfSecondRoute = None
@@ -45,20 +47,34 @@ class SwapMove:
         self.total_costChangeSecondRt = None
         self.moveCost = 10 ** 9
 
-class TwoOptMove:
+
+class CustomerInsertion(object):
+    def __init__(self):
+        self.customer = None
+        self.route = None
+        self.total_cost = 10 ** 9
+
+class CustomerInsertionAllPositions(object):
+    def __init__(self):
+        self.customer = None
+        self.route = None
+        self.insertionPosition = None
+        self.total_cost = 10 ** 9
+
+class TwoOptMove(object):
     def __init__(self):
         self.positionOfFirstRoute = None
         self.positionOfSecondRoute = None
         self.positionOfFirstNode = None
         self.positionOfSecondNode = None
         self.moveCost = None
-
     def Initialize(self):
         self.positionOfFirstRoute = None
         self.positionOfSecondRoute = None
         self.positionOfFirstNode = None
         self.positionOfSecondNode = None
         self.moveCost = 10 ** 9
+
 
 class Solver:
     def __init__(self, m: Model):
@@ -73,25 +89,19 @@ class Solver:
         self.bestSolution = None
 
     def solve(self):
-        
         self.sol = self.constructor()
+        self.save_solution_to_file(self.sol)
         self.ReportSolution(self.sol)
+        
+        
         self.LocalSearch()
-        #self.ApplyTwoOptToAllRoutes()  
+        
+
+
         self.ReportSolution(self.sol)
         self.save_solution_to_file(self.sol)
         SolDrawer.draw(0, self.sol, self.allNodes)
-        
-
-    def save_solution_to_file(self, solution, filename='solution.txt'):
-            with open(filename, 'w') as file:
-                file.write(f"Cost:\n{solution.total_cost}\n")
-                file.write("Routes:\n")
-                file.write(f"{len(solution.routes)}\n")
-                for route in solution.routes:
-                    node_ids = [node.ID for node in route.sequenceOfNodes]
-                    file.write(",".join(map(str, node_ids)) + "\n")
-
+        return(self.sol)
 
     def constructor(self):
         """
@@ -123,10 +133,6 @@ class Solver:
                     visited_nodes.add(candidate_node.ID)
                     current_node = candidate_node
 
-                    # Apply 2-opt incrementally to optimize the route
-                    if len(route.sequenceOfNodes) > 2:  # Ensure there are enough nodes for optimization
-                        optimized_sequence = self.TwoOpt(route.sequenceOfNodes)
-                        route.sequenceOfNodes = optimized_sequence
                 else:
                     break
 
@@ -136,7 +142,56 @@ class Solver:
             sol.total_cost += route.total_cost
 
         return sol
-    
+
+
+    def find_min_distance_for_i(self, i, visited_nodes):
+        min_distance = float('inf')
+        min_j = -1
+        for j in range(len(self.matrix[i])):
+            if i != j and j not in visited_nodes and self.matrix[i][j] < min_distance:
+                min_distance = self.matrix[i][j]
+                min_j = j
+        return min_j, min_distance
+
+    def calculate_route_details(self, nodes_sequence, empty_vehicle_weight):
+        total_load = sum(node.demand for node in nodes_sequence if node != self.depot)
+        tn_km = 0
+        current_load = empty_vehicle_weight + total_load
+
+        for i in range(len(nodes_sequence) - 1):
+            from_node = nodes_sequence[i]
+            to_node = nodes_sequence[i + 1]
+            distance = self.matrix[from_node.ID][to_node.ID]
+            tn_km += distance * current_load
+            current_load -= to_node.demand if to_node != self.depot else 0
+
+        return tn_km, total_load
+
+
+
+    def save_solution_to_file(self, solution, filename='solution.txt'):
+        with open(filename, 'w') as file:
+            file.write(f"Cost:\n{solution.total_cost}\n")
+            file.write("Routes:\n")
+            file.write(f"{len(solution.routes)}\n")
+            for route in solution.routes:
+                node_ids = [node.ID for node in route.sequenceOfNodes]
+                file.write(",".join(map(str, node_ids)) + "\n")
+
+    def cloneSolution(self, sol):
+        cloned = Solution()
+        for route in sol.routes:
+            clonedRoute = self.cloneRoute(route)
+            cloned.routes.append(clonedRoute)
+        cloned.total_cost = sol.total_cost
+        return cloned
+
+    def cloneRoute(self, rt):
+        cloned = Route(self.depot, rt.capacity)
+        cloned.sequenceOfNodes = rt.sequenceOfNodes.copy()
+        cloned.total_cost = rt.total_cost
+        cloned.load = rt.load
+        return cloned
     
     def LocalSearch(self):
         random.seed(1)
@@ -209,7 +264,8 @@ class Solver:
         # Finalize with the best solution found
         self.sol = self.bestSolution
         print(f"Final Iteration: {localSearchIterator}, Best Solution Cost: {self.bestSolution.total_cost}")
-
+        
+        
     def PerturbSolution(self):
     # Randomly select two routes and swap nodes between them
         route1, route2 = random.sample(self.sol.routes, 2)
@@ -222,94 +278,13 @@ class Solver:
             route1.total_cost, route1.load = self.calculate_route_details(route1.sequenceOfNodes, self.empty_vehicle_weight)
             route2.total_cost, route2.load = self.calculate_route_details(route2.sequenceOfNodes, self.empty_vehicle_weight)
             self.sol.total_cost = self.CalculateTotalCost(self.sol)
-
-
-    def TwoOpt(self, route):
-        """
-        Perform 2-opt optimization on a single route to eliminate crossing edges.
-        """
-        improved = True
-        best_route = route.copy()
-        while improved:
-            improved = False
-            for i in range(1, len(best_route) - 2):
-                for j in range(i + 1, len(best_route) - 1):
-                    # Calculate cost difference for swapping edges
-                    if (
-                        self.matrix[best_route[i - 1].ID][best_route[j].ID] +
-                        self.matrix[best_route[i].ID][best_route[j + 1].ID]
-                    ) < (
-                        self.matrix[best_route[i - 1].ID][best_route[i].ID] +
-                        self.matrix[best_route[j].ID][best_route[j + 1].ID]
-                    ):
-                        # Swap edges to improve the route
-                        best_route[i:j + 1] = reversed(best_route[i:j + 1])
-                        improved = True
-        return best_route
-
+            
+            
     
-
-    def ApplyTwoOptToAllRoutes(self):
-        """
-        Apply 2-opt optimization to all routes in the current solution.
-        """
-        for route in self.sol.routes:
-            if len(route.sequenceOfNodes) > 3:  # Ensure enough nodes for optimization
-                optimized_sequence = self.TwoOpt(route.sequenceOfNodes)
-                route.sequenceOfNodes = optimized_sequence
-                route.total_cost, route.load = self.calculate_route_details(
-                    route.sequenceOfNodes, self.empty_vehicle_weight
-                )
-
-
+        
+        
     def acceptance_probability(self, moveCost, temperature):
         return min(1, math.exp(-moveCost / temperature))
-
-    def find_min_distance_for_i(self, i, visited_nodes):
-        min_distance = float('inf')
-        min_j = -1
-        for j in range(len(self.matrix[i])):
-            if i != j and j not in visited_nodes and self.matrix[i][j] < min_distance:
-                min_distance = self.matrix[i][j]
-                min_j = j
-        return min_j, min_distance
-
-    def calculate_route_details(self, nodes_sequence, empty_vehicle_weight):
-        total_load = sum(node.demand for node in nodes_sequence if node != self.depot)
-        tn_km = 0
-        current_load = empty_vehicle_weight + total_load
-
-        for i in range(len(nodes_sequence) - 1):
-            from_node = nodes_sequence[i]
-            to_node = nodes_sequence[i + 1]
-            distance = self.matrix[from_node.ID][to_node.ID]
-            tn_km += distance * current_load
-            current_load -= to_node.demand if to_node != self.depot else 0
-
-        return tn_km, total_load
-
-    def InitializeOperators(self, rm, sm, top):
-        rm.Initialize()
-        sm.Initialize()
-        top.Initialize()
-
-    def cloneSolution(self, sol):
-        cloned = Solution()
-        for route in sol.routes:
-            clonedRoute = self.cloneRoute(route)
-            cloned.routes.append(clonedRoute)
-        cloned.total_cost = sol.total_cost
-        return cloned
-
-    def cloneRoute(self, rt):
-        cloned = Route(self.depot, rt.capacity)
-        cloned.sequenceOfNodes = rt.sequenceOfNodes.copy()
-        cloned.total_cost = rt.total_cost
-        cloned.load = rt.load
-        return cloned
-
-    # Add other required methods like FindBestRelocationMove, FindBestSwapMove, etc.
-
 
     def FindBestRelocationMove(self, rm):
         for originRouteIndex in range(0, len(self.sol.routes)):
@@ -345,15 +320,15 @@ class Solver:
                             self.StoreBestRelocationMove(originRouteIndex, targetRouteIndex, originNodeIndex, targetNodeIndex, moveCost, originRtCostChange, targetRtCostChange, rm)
 
     def FindBestSwapMove(self, sm):
-        for firstRouteIndex in range(len(self.sol.routes)):
-            rt1: Route = self.sol.routes[firstRouteIndex]
-            for secondRouteIndex in range(firstRouteIndex, len(self.sol.routes)):
-                rt2: Route = self.sol.routes[secondRouteIndex]
-                for firstNodeIndex in range(1, len(rt1.sequenceOfNodes) - 1):
+        for firstRouteIndex in range(0, len(self.sol.routes)):
+            rt1:Route = self.sol.routes[firstRouteIndex]
+            for secondRouteIndex in range (firstRouteIndex, len(self.sol.routes)):
+                rt2:Route = self.sol.routes[secondRouteIndex]
+                for firstNodeIndex in range (1, len(rt1.sequenceOfNodes) - 1):
                     startOfSecondNodeIndex = 1
                     if rt1 == rt2:
                         startOfSecondNodeIndex = firstNodeIndex + 1
-                    for secondNodeIndex in range(startOfSecondNodeIndex, len(rt2.sequenceOfNodes) - 1):
+                    for secondNodeIndex in range (startOfSecondNodeIndex, len(rt2.sequenceOfNodes) - 1):
 
                         a1 = rt1.sequenceOfNodes[firstNodeIndex - 1]
                         b1 = rt1.sequenceOfNodes[firstNodeIndex]
@@ -367,71 +342,40 @@ class Solver:
                         costChangeFirstRoute = None
                         costChangeSecondRoute = None
 
-                        # Check capacity constraints for different routes
-                        if rt1 != rt2:
-                            if rt1.load - b1.demand + b2.demand > rt1.capacity:
-                                continue
-                            if rt2.load - b2.demand + b1.demand > rt2.capacity:
-                                continue
-
-                        # Calculate costs added and removed using ton-kilometers
                         if rt1 == rt2:
                             if firstNodeIndex == secondNodeIndex - 1:
-                                # Consecutive nodes swap
-                                costRemoved = (
-                                    self.matrix[a1.ID][b1.ID] * rt1.load +
-                                    self.matrix[b1.ID][b2.ID] * (rt1.load - b1.demand) +
-                                    self.matrix[b2.ID][c2.ID] * (rt1.load - b1.demand - b2.demand)
-                                )
-                                costAdded = (
-                                    self.matrix[a1.ID][b2.ID] * rt1.load +
-                                    self.matrix[b2.ID][b1.ID] * (rt1.load - b2.demand) +
-                                    self.matrix[b1.ID][c2.ID] * (rt1.load - b1.demand - b2.demand)
-                                )
+                                # case of consecutive nodes swap
+                                costRemoved = self.matrix[a1.ID][b1.ID] + self.matrix[b1.ID][b2.ID] + \
+                                              self.matrix[b2.ID][c2.ID]
+                                costAdded = self.matrix[a1.ID][b2.ID] + self.matrix[b2.ID][b1.ID] + \
+                                            self.matrix[b1.ID][c2.ID]
                                 moveCost = costAdded - costRemoved
                             else:
-                                costRemoved1 = (
-                                    self.matrix[a1.ID][b1.ID] * rt1.load +
-                                    self.matrix[b1.ID][c1.ID] * (rt1.load - b1.demand)
-                                )
-                                costAdded1 = (
-                                    self.matrix[a1.ID][b2.ID] * rt1.load +
-                                    self.matrix[b2.ID][c1.ID] * (rt1.load - b2.demand)
-                                )
-                                costRemoved2 = (
-                                    self.matrix[a2.ID][b2.ID] * rt1.load +
-                                    self.matrix[b2.ID][c2.ID] * (rt1.load - b2.demand)
-                                )
-                                costAdded2 = (
-                                    self.matrix[a2.ID][b1.ID] * rt1.load +
-                                    self.matrix[b1.ID][c2.ID] * (rt1.load - b1.demand)
-                                )
+
+                                costRemoved1 = self.matrix[a1.ID][b1.ID] + self.matrix[b1.ID][c1.ID]
+                                costAdded1 = self.matrix[a1.ID][b2.ID] + self.matrix[b2.ID][c1.ID]
+                                costRemoved2 = self.matrix[a2.ID][b2.ID] + self.matrix[b2.ID][c2.ID]
+                                costAdded2 = self.matrix[a2.ID][b1.ID] + self.matrix[b1.ID][c2.ID]
                                 moveCost = costAdded1 + costAdded2 - (costRemoved1 + costRemoved2)
                         else:
-                            costRemoved1 = (
-                                self.matrix[a1.ID][b1.ID] * rt1.load +
-                                self.matrix[b1.ID][c1.ID] * (rt1.load - b1.demand)
-                            )
-                            costAdded1 = (
-                                self.matrix[a1.ID][b2.ID] * rt1.load +
-                                self.matrix[b2.ID][c1.ID] * (rt1.load - b2.demand)
-                            )
-                            costRemoved2 = (
-                                self.matrix[a2.ID][b2.ID] * rt2.load +
-                                self.matrix[b2.ID][c2.ID] * (rt2.load - b2.demand)
-                            )
-                            costAdded2 = (
-                                self.matrix[a2.ID][b1.ID] * rt2.load +
-                                self.matrix[b1.ID][c2.ID] * (rt2.load - b1.demand)
-                            )
+                            if rt1.load - b1.demand + b2.demand > self.capacity:
+                                continue
+                            if rt2.load - b2.demand + b1.demand > self.capacity:
+                                continue
+
+                            costRemoved1 = self.matrix[a1.ID][b1.ID] + self.matrix[b1.ID][c1.ID]
+                            costAdded1 = self.matrix[a1.ID][b2.ID] + self.matrix[b2.ID][c1.ID]
+                            costRemoved2 = self.matrix[a2.ID][b2.ID] + self.matrix[b2.ID][c2.ID]
+                            costAdded2 = self.matrix[a2.ID][b1.ID] + self.matrix[b1.ID][c2.ID]
+
                             costChangeFirstRoute = costAdded1 - costRemoved1
                             costChangeSecondRoute = costAdded2 - costRemoved2
+
                             moveCost = costAdded1 + costAdded2 - (costRemoved1 + costRemoved2)
 
                         if moveCost < sm.moveCost:
                             self.StoreBestSwapMove(firstRouteIndex, secondRouteIndex, firstNodeIndex, secondNodeIndex,
-                                                moveCost, costChangeFirstRoute, costChangeSecondRoute, sm)
-
+                                                   moveCost, costChangeFirstRoute, costChangeSecondRoute, sm)
 
     def ApplyRelocationMove(self, rm):
         origin_rt = self.sol.routes[rm.originRoutePosition]
@@ -442,8 +386,8 @@ class Solver:
         target_rt.sequenceOfNodes.insert(rm.targetNodePosition + 1, B)
         
         # Recalculate costs for both routes
-        origin_rt.cost, origin_rt.load = self.calculate_route_details(origin_rt.sequenceOfNodes, self.empty_vehicle_weight)
-        target_rt.cost, target_rt.load = self.calculate_route_details(target_rt.sequenceOfNodes, self.empty_vehicle_weight)
+        origin_rt.total_cost, origin_rt.load = self.calculate_route_details(origin_rt.sequenceOfNodes, self.empty_vehicle_weight)
+        target_rt.total_cost, target_rt.load = self.calculate_route_details(target_rt.sequenceOfNodes, self.empty_vehicle_weight)
         
         # Update total solution cost
         self.sol.total_cost = self.CalculateTotalCost(self.sol)
@@ -558,54 +502,51 @@ class Solver:
         top.Initialize()
 
     def FindBestTwoOptMove(self, top):
-            for rtInd1 in range(0, len(self.sol.routes)):
-                rt1: Route = self.sol.routes[rtInd1]
+        for rtInd1 in range(0, len(self.sol.routes)):
+            rt1: Route = self.sol.routes[rtInd1]
+            for rtInd2 in range(rtInd1, len(self.sol.routes)):
+                rt2: Route = self.sol.routes[rtInd2]
+                for nodeInd1 in range(0, len(rt1.sequenceOfNodes) - 1):
+                    start2 = 0
+                    if rt1 == rt2:
+                        # Avoid overlapping segments within the same route
+                        start2 = nodeInd1 + 2
 
-                for rtInd2 in range(rtInd1, len(self.sol.routes)):
-                    rt2: Route = self.sol.routes[rtInd2]
+                    for nodeInd2 in range(start2, len(rt2.sequenceOfNodes) - 1):
+                        # Store original segments
+                        original_rt1_segment = rt1.sequenceOfNodes[nodeInd1 + 1:]
+                        original_rt2_segment = rt2.sequenceOfNodes[nodeInd2 + 1:]
 
-                    for nodeInd1 in range(0, len(rt1.sequenceOfNodes) - 1):
-                        start2 = 0
-                        if rt1 == rt2:
-                            start2 = nodeInd1 + 2
+                        # Perform two-opt swap
+                        rt1.sequenceOfNodes = rt1.sequenceOfNodes[:nodeInd1 + 1] + original_rt2_segment
+                        rt2.sequenceOfNodes = rt2.sequenceOfNodes[:nodeInd2 + 1] + original_rt1_segment
 
-                        for nodeInd2 in range(start2, len(rt2.sequenceOfNodes) - 1):
-                            # Calculate loads for the segments being swapped
-                            rt1_segment_load = sum(node.demand for node in rt1.sequenceOfNodes[nodeInd1 + 1:])
-                            rt2_segment_load = sum(node.demand for node in rt2.sequenceOfNodes[nodeInd2 + 1:])
+                        # Recalculate the cost and load of both routes
+                        first_route_cost, first_route_load = self.calculate_route_details(rt1.sequenceOfNodes, self.empty_vehicle_weight)
+                        second_route_cost, second_route_load = self.calculate_route_details(rt2.sequenceOfNodes, self.empty_vehicle_weight)
 
-                            # Calculate new loads after the swap
-                            new_rt1_load = rt1.load - rt1_segment_load + rt2_segment_load
-                            new_rt2_load = rt2.load - rt2_segment_load + rt1_segment_load
-
-                            # Check if the swap violates capacity constraints
-                            if new_rt1_load > rt1.capacity or new_rt2_load > rt2.capacity:
-                                continue  # Skip this swap if it violates capacity
-
-                            # Store original segments
-                            original_rt1_segment = rt1.sequenceOfNodes[nodeInd1 + 1:]
-                            original_rt2_segment = rt2.sequenceOfNodes[nodeInd2 + 1:]
-
-                            # Perform two-opt swap
-                            rt1.sequenceOfNodes = rt1.sequenceOfNodes[:nodeInd1 + 1] + original_rt2_segment
-                            rt2.sequenceOfNodes = rt2.sequenceOfNodes[:nodeInd2 + 1] + original_rt1_segment
-
-                            # Recalculate the cost of both routes
-                            first_route_cost, _ = self.calculate_route_details(rt1.sequenceOfNodes, self.empty_vehicle_weight)
-                            second_route_cost, _ = self.calculate_route_details(rt2.sequenceOfNodes, self.empty_vehicle_weight)
-
-                            # Calculate the cost change
-                            costChangeFirstRoute = first_route_cost - rt1.total_cost
-                            costChangeSecondRoute = second_route_cost - rt2.total_cost
-                            moveCost = costChangeFirstRoute + costChangeSecondRoute
-
-                            # Revert to the original routes
+                        # Check for load violations
+                        if first_route_load > self.capacity or second_route_load > self.capacity:
+                            # Restore original segments and continue
                             rt1.sequenceOfNodes = rt1.sequenceOfNodes[:nodeInd1 + 1] + original_rt1_segment
                             rt2.sequenceOfNodes = rt2.sequenceOfNodes[:nodeInd2 + 1] + original_rt2_segment
+                            continue
 
-                            # Update the best move if this one is better
-                            if moveCost < top.moveCost:
-                                self.StoreBestTwoOptMove(rtInd1, rtInd2, nodeInd1, nodeInd2, moveCost, top)
+                        # Calculate cost change based on tn_km
+                        costChangeFirstRoute = first_route_cost - rt1.total_cost
+                        costChangeSecondRoute = second_route_cost - rt2.total_cost
+                        moveCost = costChangeFirstRoute + costChangeSecondRoute
+
+                        # Restore original segments
+                        rt1.sequenceOfNodes = rt1.sequenceOfNodes[:nodeInd1 + 1] + original_rt1_segment
+                        rt2.sequenceOfNodes = rt2.sequenceOfNodes[:nodeInd2 + 1] + original_rt2_segment
+                        # Debugging: Check evaluated nodes and cost change
+                        
+                        # Update the best move if this one is better
+                        if moveCost < top.moveCost:
+
+                            self.StoreBestTwoOptMove(rtInd1, rtInd2, nodeInd1, nodeInd2, moveCost, top)
+
 
 
     def CapacityIsViolated(self, rt1, nodeInd1, rt2, nodeInd2):
@@ -667,6 +608,7 @@ class Solver:
 
             self.UpdateRouteCostAndLoad(rt1)
             self.UpdateRouteCostAndLoad(rt2)
+            
 
         self.sol.total_cost += top.moveCost
 
@@ -704,7 +646,7 @@ class Solver:
                 tn_km += distance * current_load
                 current_load -= to_node.demand if to_node != self.depot else 0
 
-            totalSolCost += route.cost
+            totalSolCost += route.total_cost
 
         
     def IdentifyMinimumCostInsertion(self, best_insertion):
