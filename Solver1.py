@@ -94,31 +94,43 @@ class Solver:
 
 
     def constructor(self):
+        """
+        Constructs an initial solution with 2-opt applied during the route creation process.
+        """
         sol = Solution()
         visited_nodes = {self.depot.ID}
         remaining_demand = sum(node.demand for node in self.customers)
 
         while remaining_demand > 0:
+            # Create a new route starting from the depot
             route = Route(self.depot, self.capacity)
             track_space = self.capacity
             current_node = self.depot
 
             while track_space > 0 and len(visited_nodes) < len(self.allNodes):
+                # Find the nearest unvisited node
                 min_j, min_distance = self.find_min_distance_for_i(current_node.ID, visited_nodes)
                 if min_j == -1:
                     break
 
                 candidate_node = self.allNodes[min_j]
                 if candidate_node.demand <= track_space and not candidate_node.isRouted:
+                    # Add the node to the route
                     route.sequenceOfNodes.append(candidate_node)
                     candidate_node.isRouted = True
                     track_space -= candidate_node.demand
                     remaining_demand -= candidate_node.demand
                     visited_nodes.add(candidate_node.ID)
                     current_node = candidate_node
+
+                    # Apply 2-opt incrementally to optimize the route
+                    if len(route.sequenceOfNodes) > 2:  # Ensure there are enough nodes for optimization
+                        optimized_sequence = self.TwoOpt(route.sequenceOfNodes)
+                        route.sequenceOfNodes = optimized_sequence
                 else:
                     break
 
+            # Recalculate the route's cost and load after optimization
             route.total_cost, route.load = self.calculate_route_details(route.sequenceOfNodes, self.empty_vehicle_weight)
             sol.routes.append(route)
             sol.total_cost += route.total_cost
@@ -126,58 +138,25 @@ class Solver:
         return sol
     
     
-    def TwoOpt(self, route):
-        """
-        Perform 2-opt optimization on a single route to eliminate crossing edges.
-        """
-        improved = True
-        best_route = route.copy()
-        while improved:
-            improved = False
-            for i in range(1, len(best_route) - 2):
-                for j in range(i + 1, len(best_route) - 1):
-                    # Calculate cost difference for swapping edges
-                    if (
-                        self.matrix[best_route[i - 1].ID][best_route[j].ID] +
-                        self.matrix[best_route[i].ID][best_route[j + 1].ID]
-                    ) < (
-                        self.matrix[best_route[i - 1].ID][best_route[i].ID] +
-                        self.matrix[best_route[j].ID][best_route[j + 1].ID]
-                    ):
-                        # Swap edges to improve the route
-                        best_route[i:j + 1] = reversed(best_route[i:j + 1])
-                        improved = True
-        return best_route
-
-    def ApplyTwoOptToAllRoutes(self):
-        """
-        Apply 2-opt optimization to all routes in the current solution.
-        """
-        for route in self.sol.routes:
-            if len(route.sequenceOfNodes) > 3:  # Ensure enough nodes for optimization
-                optimized_sequence = self.TwoOpt(route.sequenceOfNodes)
-                route.sequenceOfNodes = optimized_sequence
-                route.total_cost, route.load = self.calculate_route_details(
-                    route.sequenceOfNodes, self.empty_vehicle_weight
-                )
-
     def LocalSearch(self):
         random.seed(1)
 
         self.bestSolution = self.cloneSolution(self.sol)
         currentSolution = self.cloneSolution(self.sol)
 
-        temperature = 1000
-        cooling_rate = 0.995
-        min_temperature = 1e-3
-        max_iterations = 10000
+        temperature = 1000  # Initial temperature
+        cooling_rate = 0.995  # Cooling rate
+        min_temperature = 1e-3  # Minimum temperature to stop the search
 
         localSearchIterator = 0
+        max_no_improvement = 500  # Allow up to 500 iterations without improvement
+        no_improvement_counter = 0  # Track consecutive non-improving iterations
+
         rm = RelocationMove()
         sm = SwapMove()
         top = TwoOptMove()
 
-        while temperature > min_temperature and localSearchIterator < max_iterations:
+        while temperature > min_temperature:
             operator = random.randint(0, 2)
             self.InitializeOperators(rm, sm, top)
 
@@ -205,21 +184,133 @@ class Solver:
             # Update the current solution cost
             self.sol.total_cost = self.CalculateTotalCost(self.sol)
 
-            # Update the best solution found so far
+            # Check for improvement
             if self.sol.total_cost < self.bestSolution.total_cost:
                 self.bestSolution = self.cloneSolution(self.sol)
+                no_improvement_counter = 0  # Reset counter
+                print(f"Iteration {localSearchIterator}, New Best Cost: {self.bestSolution.total_cost}")
+            else:
+                no_improvement_counter += 1
+
+            # Escape local minima if no improvement
+            if no_improvement_counter >= max_no_improvement:
+                print(f"Escaping local minimum at iteration {localSearchIterator}")
+                self.PerturbSolution()  # Add random perturbations to escape local minima
+                no_improvement_counter = 0
 
             # Decrease the temperature and increment the iteration count
             temperature *= cooling_rate
             localSearchIterator += 1
 
-            # Print progress every 100 iterations
+            # Print progress periodically
             if localSearchIterator % 100 == 0:
                 print(f"Iteration {localSearchIterator}, Temperature: {temperature:.4f}, Best Cost: {self.bestSolution.total_cost}")
 
         # Finalize with the best solution found
         self.sol = self.bestSolution
         print(f"Final Iteration: {localSearchIterator}, Best Solution Cost: {self.bestSolution.total_cost}")
+
+    def PerturbSolution(self):
+    # Randomly select two routes and swap nodes between them
+        route1, route2 = random.sample(self.sol.routes, 2)
+        if len(route1.sequenceOfNodes) > 2 and len(route2.sequenceOfNodes) > 2:
+            idx1 = random.randint(1, len(route1.sequenceOfNodes) - 2)
+            idx2 = random.randint(1, len(route2.sequenceOfNodes) - 2)
+            route1.sequenceOfNodes[idx1], route2.sequenceOfNodes[idx2] = route2.sequenceOfNodes[idx2], route1.sequenceOfNodes[idx1]
+            
+            # Recalculate route costs and loads
+            route1.total_cost, route1.load = self.calculate_route_details(route1.sequenceOfNodes, self.empty_vehicle_weight)
+            route2.total_cost, route2.load = self.calculate_route_details(route2.sequenceOfNodes, self.empty_vehicle_weight)
+            self.sol.total_cost = self.CalculateTotalCost(self.sol)
+
+
+    def TwoOpt(self, route):
+        """
+        Perform 2-opt optimization on a single route to eliminate crossing edges.
+        """
+        improved = True
+        best_route = route.copy()
+        while improved:
+            improved = False
+            for i in range(1, len(best_route) - 2):
+                for j in range(i + 1, len(best_route) - 1):
+                    # Calculate cost difference for swapping edges
+                    if (
+                        self.matrix[best_route[i - 1].ID][best_route[j].ID] +
+                        self.matrix[best_route[i].ID][best_route[j + 1].ID]
+                    ) < (
+                        self.matrix[best_route[i - 1].ID][best_route[i].ID] +
+                        self.matrix[best_route[j].ID][best_route[j + 1].ID]
+                    ):
+                        # Swap edges to improve the route
+                        best_route[i:j + 1] = reversed(best_route[i:j + 1])
+                        improved = True
+        return best_route
+
+    
+
+    def ApplyTwoOptToAllRoutes(self):
+        """
+        Apply 2-opt optimization to all routes in the current solution.
+        """
+        for route in self.sol.routes:
+            if len(route.sequenceOfNodes) > 3:  # Ensure enough nodes for optimization
+                optimized_sequence = self.TwoOpt(route.sequenceOfNodes)
+                route.sequenceOfNodes = optimized_sequence
+                route.total_cost, route.load = self.calculate_route_details(
+                    route.sequenceOfNodes, self.empty_vehicle_weight
+                )
+
+    
+
+
+        
+    def FindBestOrOptMove(self):
+        """
+        Finds the best Or-opt move for relocating a segment of 1, 2, or 3 nodes 
+        from one route (or part of a route) to another.
+        """
+        for originRouteIndex in range(len(self.sol.routes)):
+            rt1: Route = self.sol.routes[originRouteIndex]
+            for segmentLength in range(1, 4):  # Try relocating segments of length 1, 2, or 3
+                for originNodeIndex in range(1, len(rt1.sequenceOfNodes) - segmentLength):  # Ensure bounds for segment
+                    for targetRouteIndex in range(len(self.sol.routes)):
+                        rt2: Route = self.sol.routes[targetRouteIndex]
+                        for targetNodeIndex in range(len(rt2.sequenceOfNodes) - 1):
+                            # Check that the segment length and target insertion point are valid
+                            if originNodeIndex + segmentLength > len(rt1.sequenceOfNodes):
+                                continue  # Skip if the segment would exceed the route boundary
+
+                            # Check capacity constraints for cross-route Or-opt
+                            segmentLoad = sum(node.demand for node in rt1.sequenceOfNodes[originNodeIndex:originNodeIndex + segmentLength])
+                            if rt1 != rt2 and rt2.load + segmentLoad > rt2.capacity:
+                                continue
+
+                            # Calculate the cost difference for the move
+                            costRemoved = (
+                                self.matrix[rt1.sequenceOfNodes[originNodeIndex - 1].ID][rt1.sequenceOfNodes[originNodeIndex].ID] +
+                                self.matrix[rt1.sequenceOfNodes[originNodeIndex + segmentLength - 1].ID][rt1.sequenceOfNodes[originNodeIndex + segmentLength].ID]
+                                if originNodeIndex + segmentLength < len(rt1.sequenceOfNodes) else 0
+                            )
+                            costAdded = (
+                                self.matrix[rt2.sequenceOfNodes[targetNodeIndex].ID][rt1.sequenceOfNodes[originNodeIndex].ID] +
+                                self.matrix[rt1.sequenceOfNodes[originNodeIndex + segmentLength - 1].ID][rt2.sequenceOfNodes[targetNodeIndex + 1].ID]
+                            )
+                            moveCost = costAdded - costRemoved
+
+                            # Apply the Or-opt move if it reduces the cost
+                            if moveCost < 0:
+                                # Perform the move
+                                segment = rt1.sequenceOfNodes[originNodeIndex:originNodeIndex + segmentLength]
+                                del rt1.sequenceOfNodes[originNodeIndex:originNodeIndex + segmentLength]
+                                rt2.sequenceOfNodes[targetNodeIndex + 1:targetNodeIndex + 1] = segment
+
+                                # Update loads and costs
+                                rt1.total_cost, rt1.load = self.calculate_route_details(rt1.sequenceOfNodes, self.empty_vehicle_weight)
+                                rt2.total_cost, rt2.load = self.calculate_route_details(rt2.sequenceOfNodes, self.empty_vehicle_weight)
+                                self.sol.total_cost = self.CalculateTotalCost(self.sol)
+
+
 
 
     def acceptance_probability(self, moveCost, temperature):
