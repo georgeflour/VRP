@@ -261,57 +261,6 @@ class Solver:
                     route.sequenceOfNodes, self.empty_vehicle_weight
                 )
 
-    
-
-
-        
-    def FindBestOrOptMove(self):
-        """
-        Finds the best Or-opt move for relocating a segment of 1, 2, or 3 nodes 
-        from one route (or part of a route) to another.
-        """
-        for originRouteIndex in range(len(self.sol.routes)):
-            rt1: Route = self.sol.routes[originRouteIndex]
-            for segmentLength in range(1, 4):  # Try relocating segments of length 1, 2, or 3
-                for originNodeIndex in range(1, len(rt1.sequenceOfNodes) - segmentLength):  # Ensure bounds for segment
-                    for targetRouteIndex in range(len(self.sol.routes)):
-                        rt2: Route = self.sol.routes[targetRouteIndex]
-                        for targetNodeIndex in range(len(rt2.sequenceOfNodes) - 1):
-                            # Check that the segment length and target insertion point are valid
-                            if originNodeIndex + segmentLength > len(rt1.sequenceOfNodes):
-                                continue  # Skip if the segment would exceed the route boundary
-
-                            # Check capacity constraints for cross-route Or-opt
-                            segmentLoad = sum(node.demand for node in rt1.sequenceOfNodes[originNodeIndex:originNodeIndex + segmentLength])
-                            if rt1 != rt2 and rt2.load + segmentLoad > rt2.capacity:
-                                continue
-
-                            # Calculate the cost difference for the move
-                            costRemoved = (
-                                self.matrix[rt1.sequenceOfNodes[originNodeIndex - 1].ID][rt1.sequenceOfNodes[originNodeIndex].ID] +
-                                self.matrix[rt1.sequenceOfNodes[originNodeIndex + segmentLength - 1].ID][rt1.sequenceOfNodes[originNodeIndex + segmentLength].ID]
-                                if originNodeIndex + segmentLength < len(rt1.sequenceOfNodes) else 0
-                            )
-                            costAdded = (
-                                self.matrix[rt2.sequenceOfNodes[targetNodeIndex].ID][rt1.sequenceOfNodes[originNodeIndex].ID] +
-                                self.matrix[rt1.sequenceOfNodes[originNodeIndex + segmentLength - 1].ID][rt2.sequenceOfNodes[targetNodeIndex + 1].ID]
-                            )
-                            moveCost = costAdded - costRemoved
-
-                            # Apply the Or-opt move if it reduces the cost
-                            if moveCost < 0:
-                                # Perform the move
-                                segment = rt1.sequenceOfNodes[originNodeIndex:originNodeIndex + segmentLength]
-                                del rt1.sequenceOfNodes[originNodeIndex:originNodeIndex + segmentLength]
-                                rt2.sequenceOfNodes[targetNodeIndex + 1:targetNodeIndex + 1] = segment
-
-                                # Update loads and costs
-                                rt1.total_cost, rt1.load = self.calculate_route_details(rt1.sequenceOfNodes, self.empty_vehicle_weight)
-                                rt2.total_cost, rt2.load = self.calculate_route_details(rt2.sequenceOfNodes, self.empty_vehicle_weight)
-                                self.sol.total_cost = self.CalculateTotalCost(self.sol)
-
-
-
 
     def acceptance_probability(self, moveCost, temperature):
         return min(1, math.exp(-moveCost / temperature))
