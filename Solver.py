@@ -52,7 +52,30 @@ class RelocationMove(object):
         self.total_costChangeTargetRt = None
         self.moveCost = 10 ** 9
 
-
+class TripleRelocationMove:
+    def __init__(self):
+        self.positionOfFirstRoute = None
+        self.positionOfSecondRoute = None
+        self.positionOfThirdRoute = None
+        self.positionOfFirstNode = None
+        self.positionOfSecondNode = None
+        self.positionOfThirdNode = None
+        self.moveCost = float('inf')
+        self.costChangeFirstRoute = None
+        self.costChangeSecondRoute = None
+        self.costChangeThirdRoute = None
+ 
+    def Initialize(self):
+        self.positionOfFirstRoute = None
+        self.positionOfSecondRoute = None
+        self.positionOfThirdRoute = None
+        self.positionOfFirstNode = None
+        self.positionOfSecondNode = None
+        self.positionOfThirdNode = None
+        self.moveCost = float('inf')
+        self.costChangeFirstRoute = None
+        self.costChangeSecondRoute = None
+        self.costChangeThirdRoute = None
 class SwapMove(object):
     def __init__(self):
         self.positionOfFirstRoute = None
@@ -116,15 +139,16 @@ class Solver:
         self.sol = self.constructor()
         self.save_solution_to_file(self.sol)
         self.ReportSolution(self.sol)
+        SolDrawer.draw(1, self.sol, self.allNodes)
         
-        
-        self.LocalSearch()
+
         self.LocalSearch()
         self.LocalSearch()
 
+        SolDrawer.draw(1, self.sol, self.allNodes)
         self.ReportSolution(self.sol)
         self.save_solution_to_file(self.sol)
-        SolDrawer.draw(0, self.sol, self.allNodes)
+
         return(self.sol)
 
     def constructor(self):
@@ -215,8 +239,9 @@ class Solver:
         min_temperature = 1e-3
         max_iterations = 100
         self.bestSolution = self.cloneSolution(self.sol)
+        print(self.bestSolution.total_cost)
         localSearchIterator=0
-
+        trm = TripleRelocationMove()
         rm = RelocationMove()
         sm = SwapMove()
         top = TwoOptMove()
@@ -225,8 +250,8 @@ class Solver:
         
 
         while temperature > min_temperature and localSearchIterator < max_iterations:  # Perform local search until no improvement
-            self.InitializeOperators(rm, sm, top,tsm)
-            operator = random.randint(0, 3)
+            self.InitializeOperators(rm, sm, top,tsm,trm)
+            operator = random.randint(0, 4)
             # Relocations
             if operator == 0:
                 self.FindBestRelocationMove(rm)
@@ -250,7 +275,11 @@ class Solver:
                     
                     if sm.moveCost < 0 or random.random() < self.acceptance_probability(rm.moveCost, temperature):
                         self.ApplyTripleSwapMove(tsm)
-
+            elif operator == 4:
+                self.FindBestTripleRelocationMove(trm)
+                if trm.positionOfFirstRoute is not None:
+                    if trm.moveCost < 0 or random.random() < self.acceptance_probability(trm.moveCost, temperature):
+                        self.ApplyTripleRelocationMove(trm)
             self.sol.total_cost = self.CalculateTotalCost(self.sol)
             self.TestSolution()
 
@@ -267,56 +296,105 @@ class Solver:
         return min(1, math.exp(-moveCost / temperature))
 
     def FindBestRelocationMove(self, rm):
-        for originRouteIndex in range(0, len(self.sol.routes)):
-            rt1:Route = self.sol.routes[originRouteIndex]
-            for originNodeIndex in range(1, len(rt1.sequenceOfNodes) - 1):
-                for targetRouteIndex in range (0, len(self.sol.routes)):
-                    rt2:Route = self.sol.routes[targetRouteIndex]
-                    for targetNodeIndex in range (0, len(rt2.sequenceOfNodes) - 1):
+        for originRouteIndex in range(len(self.sol.routes)):
+            rt1: Route = self.sol.routes[originRouteIndex]
+            for originNodeIndex in range(1, len(rt1.sequenceOfNodes)): 
 
-                        if originRouteIndex == targetRouteIndex and (targetNodeIndex == originNodeIndex or targetNodeIndex == originNodeIndex - 1):
+                for targetRouteIndex in range(len(self.sol.routes)):
+                    rt2: Route = self.sol.routes[targetRouteIndex]
+                    for targetNodeIndex in range(len(rt2.sequenceOfNodes)):  # Include position after the depot
+
+                        # Avoid invalid moves within the same route
+                        if originRouteIndex == targetRouteIndex and (
+                            targetNodeIndex == originNodeIndex or targetNodeIndex == originNodeIndex - 1
+                        ):
                             continue
 
                         A = rt1.sequenceOfNodes[originNodeIndex - 1]
                         B = rt1.sequenceOfNodes[originNodeIndex]
-                        C = rt1.sequenceOfNodes[originNodeIndex + 1]
+                        C = (
+                            rt1.sequenceOfNodes[originNodeIndex + 1]
+                            if originNodeIndex + 1 < len(rt1.sequenceOfNodes)
+                            else None
+                        )
 
                         F = rt2.sequenceOfNodes[targetNodeIndex]
-                        G = rt2.sequenceOfNodes[targetNodeIndex + 1]
+                        G = (
+                            rt2.sequenceOfNodes[targetNodeIndex + 1]
+                            if targetNodeIndex + 1 < len(rt2.sequenceOfNodes)
+                            else None
+                        )
 
-                        if rt1 != rt2:
-                            if rt2.load + B.demand > rt2.capacity:
-                                continue
+                        # Special case: Moving B between the depot and the first node
+                        if targetNodeIndex == 0:
+                            G = rt2.sequenceOfNodes[1] if len(rt2.sequenceOfNodes) > 1 else None
 
-                        costAdded = self.matrix[A.ID][C.ID] + self.matrix[F.ID][B.ID] + self.matrix[B.ID][G.ID]
-                        costRemoved = self.matrix[A.ID][B.ID] + self.matrix[B.ID][C.ID] + self.matrix[F.ID][G.ID]
+                        # Calculate the costs
+                        costAdded = self.matrix[A.ID][C.ID] if C else 0
+                        costAdded += self.matrix[F.ID][B.ID]
+                        costAdded += self.matrix[B.ID][G.ID] if G else 0
 
-                        originRtCostChange = self.matrix[A.ID][C.ID] - self.matrix[A.ID][B.ID] - self.matrix[B.ID][C.ID]
-                        targetRtCostChange = self.matrix[F.ID][B.ID] + self.matrix[B.ID][G.ID] - self.matrix[F.ID][G.ID]
+                        costRemoved = self.matrix[A.ID][B.ID]
+                        costRemoved += self.matrix[B.ID][C.ID] if C else 0
+                        costRemoved += self.matrix[F.ID][G.ID] if G else 0
+
+                        originRtCostChange = (
+                            self.matrix[A.ID][C.ID] - self.matrix[A.ID][B.ID] - self.matrix[B.ID][C.ID]
+                            if C
+                            else -self.matrix[A.ID][B.ID]
+                        )
+                        targetRtCostChange = (
+                            self.matrix[F.ID][B.ID] + self.matrix[B.ID][G.ID] - self.matrix[F.ID][G.ID]
+                            if G
+                            else self.matrix[F.ID][B.ID]
+                        )
 
                         moveCost = costAdded - costRemoved
 
-                        if (moveCost < rm.moveCost):
-                            self.StoreBestRelocationMove(originRouteIndex, targetRouteIndex, originNodeIndex, targetNodeIndex, moveCost, originRtCostChange, targetRtCostChange, rm)
+                        # Check capacity constraints
+                        if rt1 != rt2 and rt2.load + B.demand > rt2.capacity:
+                            continue
+
+                        # Update the best relocation move if this one is better
+                        if moveCost < rm.moveCost:
+                            self.StoreBestRelocationMove(
+                                originRouteIndex,
+                                targetRouteIndex,
+                                originNodeIndex,
+                                targetNodeIndex,
+                                moveCost,
+                                originRtCostChange,
+                                targetRtCostChange,
+                                rm,
+                            )
+
 
     def FindBestSwapMove(self, sm):
-        for firstRouteIndex in range(0, len(self.sol.routes)):
-            rt1:Route = self.sol.routes[firstRouteIndex]
-            for secondRouteIndex in range (firstRouteIndex, len(self.sol.routes)):
-                rt2:Route = self.sol.routes[secondRouteIndex]
-                for firstNodeIndex in range (1, len(rt1.sequenceOfNodes) - 1):
+        for firstRouteIndex in range(len(self.sol.routes)):
+            rt1: Route = self.sol.routes[firstRouteIndex]
+            for secondRouteIndex in range(firstRouteIndex, len(self.sol.routes)):
+                rt2: Route = self.sol.routes[secondRouteIndex]
+                for firstNodeIndex in range(1, len(rt1.sequenceOfNodes)):
                     startOfSecondNodeIndex = 1
                     if rt1 == rt2:
                         startOfSecondNodeIndex = firstNodeIndex + 1
-                    for secondNodeIndex in range (startOfSecondNodeIndex, len(rt2.sequenceOfNodes) - 1):
+                    for secondNodeIndex in range(startOfSecondNodeIndex, len(rt2.sequenceOfNodes)):
 
                         a1 = rt1.sequenceOfNodes[firstNodeIndex - 1]
                         b1 = rt1.sequenceOfNodes[firstNodeIndex]
-                        c1 = rt1.sequenceOfNodes[firstNodeIndex + 1]
+                        c1 = (
+                            rt1.sequenceOfNodes[firstNodeIndex + 1]
+                            if firstNodeIndex + 1 < len(rt1.sequenceOfNodes)
+                            else None
+                        )
 
                         a2 = rt2.sequenceOfNodes[secondNodeIndex - 1]
                         b2 = rt2.sequenceOfNodes[secondNodeIndex]
-                        c2 = rt2.sequenceOfNodes[secondNodeIndex + 1]
+                        c2 = (
+                            rt2.sequenceOfNodes[secondNodeIndex + 1]
+                            if secondNodeIndex + 1 < len(rt2.sequenceOfNodes)
+                            else None
+                        )
 
                         moveCost = None
                         costChangeFirstRoute = None
@@ -324,18 +402,23 @@ class Solver:
 
                         if rt1 == rt2:
                             if firstNodeIndex == secondNodeIndex - 1:
-                                # case of consecutive nodes swap
-                                costRemoved = self.matrix[a1.ID][b1.ID] + self.matrix[b1.ID][b2.ID] + \
-                                              self.matrix[b2.ID][c2.ID]
-                                costAdded = self.matrix[a1.ID][b2.ID] + self.matrix[b2.ID][b1.ID] + \
-                                            self.matrix[b1.ID][c2.ID]
+                                # Case of consecutive nodes swap
+                                costRemoved = (
+                                    self.matrix[a1.ID][b1.ID]
+                                    + self.matrix[b1.ID][b2.ID]
+                                    + (self.matrix[b2.ID][c2.ID] if c2 else 0)
+                                )
+                                costAdded = (
+                                    self.matrix[a1.ID][b2.ID]
+                                    + self.matrix[b2.ID][b1.ID]
+                                    + (self.matrix[b1.ID][c2.ID] if c2 else 0)
+                                )
                                 moveCost = costAdded - costRemoved
                             else:
-
-                                costRemoved1 = self.matrix[a1.ID][b1.ID] + self.matrix[b1.ID][c1.ID]
-                                costAdded1 = self.matrix[a1.ID][b2.ID] + self.matrix[b2.ID][c1.ID]
-                                costRemoved2 = self.matrix[a2.ID][b2.ID] + self.matrix[b2.ID][c2.ID]
-                                costAdded2 = self.matrix[a2.ID][b1.ID] + self.matrix[b1.ID][c2.ID]
+                                costRemoved1 = self.matrix[a1.ID][b1.ID] + (self.matrix[b1.ID][c1.ID] if c1 else 0)
+                                costAdded1 = self.matrix[a1.ID][b2.ID] + (self.matrix[b2.ID][c1.ID] if c1 else 0)
+                                costRemoved2 = self.matrix[a2.ID][b2.ID] + (self.matrix[b2.ID][c2.ID] if c2 else 0)
+                                costAdded2 = self.matrix[a2.ID][b1.ID] + (self.matrix[b1.ID][c2.ID] if c2 else 0)
                                 moveCost = costAdded1 + costAdded2 - (costRemoved1 + costRemoved2)
                         else:
                             if rt1.load - b1.demand + b2.demand > self.capacity:
@@ -343,10 +426,10 @@ class Solver:
                             if rt2.load - b2.demand + b1.demand > self.capacity:
                                 continue
 
-                            costRemoved1 = self.matrix[a1.ID][b1.ID] + self.matrix[b1.ID][c1.ID]
-                            costAdded1 = self.matrix[a1.ID][b2.ID] + self.matrix[b2.ID][c1.ID]
-                            costRemoved2 = self.matrix[a2.ID][b2.ID] + self.matrix[b2.ID][c2.ID]
-                            costAdded2 = self.matrix[a2.ID][b1.ID] + self.matrix[b1.ID][c2.ID]
+                            costRemoved1 = self.matrix[a1.ID][b1.ID] + (self.matrix[b1.ID][c1.ID] if c1 else 0)
+                            costAdded1 = self.matrix[a1.ID][b2.ID] + (self.matrix[b2.ID][c1.ID] if c1 else 0)
+                            costRemoved2 = self.matrix[a2.ID][b2.ID] + (self.matrix[b2.ID][c2.ID] if c2 else 0)
+                            costAdded2 = self.matrix[a2.ID][b1.ID] + (self.matrix[b1.ID][c2.ID] if c2 else 0)
 
                             costChangeFirstRoute = costAdded1 - costRemoved1
                             costChangeSecondRoute = costAdded2 - costRemoved2
@@ -354,8 +437,16 @@ class Solver:
                             moveCost = costAdded1 + costAdded2 - (costRemoved1 + costRemoved2)
 
                         if moveCost < sm.moveCost:
-                            self.StoreBestSwapMove(firstRouteIndex, secondRouteIndex, firstNodeIndex, secondNodeIndex,
-                                                   moveCost, costChangeFirstRoute, costChangeSecondRoute, sm)
+                            self.StoreBestSwapMove(
+                                firstRouteIndex,
+                                secondRouteIndex,
+                                firstNodeIndex,
+                                secondNodeIndex,
+                                moveCost,
+                                costChangeFirstRoute,
+                                costChangeSecondRoute,
+                                sm,
+                            )
 
     def ApplyRelocationMove(self, rm):
         origin_rt = self.sol.routes[rm.originRoutePosition]
@@ -476,11 +567,12 @@ class Solver:
 
         return total_cost
 
-    def InitializeOperators(self, rm, sm, top, tsm):
+    def InitializeOperators(self, rm, sm, top, tsm, trm):
         rm.Initialize()
         sm.Initialize()
         top.Initialize()
         tsm.Initialize()
+        trm.Initialize()
 
     def FindBestTwoOptMove(self, top):
         for rtInd1 in range(0, len(self.sol.routes)):
@@ -701,38 +793,52 @@ class Solver:
                 for thirdRouteIndex in range(len(self.sol.routes)):
                     rt3: Route = self.sol.routes[thirdRouteIndex]
 
-                    for firstNodeIndex in range(1, len(rt1.sequenceOfNodes) - 1):
-                        for secondNodeIndex in range(1, len(rt2.sequenceOfNodes) - 1):
-                            for thirdNodeIndex in range(1, len(rt3.sequenceOfNodes) - 1):
+                    for firstNodeIndex in range(1, len(rt1.sequenceOfNodes)):
+                        for secondNodeIndex in range(1, len(rt2.sequenceOfNodes)):
+                            for thirdNodeIndex in range(1, len(rt3.sequenceOfNodes)):
 
                                 # Nodes involved in the swap
                                 a1 = rt1.sequenceOfNodes[firstNodeIndex - 1]
                                 b1 = rt1.sequenceOfNodes[firstNodeIndex]
-                                c1 = rt1.sequenceOfNodes[firstNodeIndex + 1]
+                                c1 = (
+                                    rt1.sequenceOfNodes[firstNodeIndex + 1]
+                                    if firstNodeIndex + 1 < len(rt1.sequenceOfNodes)
+                                    else None
+                                )
 
                                 a2 = rt2.sequenceOfNodes[secondNodeIndex - 1]
                                 b2 = rt2.sequenceOfNodes[secondNodeIndex]
-                                c2 = rt2.sequenceOfNodes[secondNodeIndex + 1]
+                                c2 = (
+                                    rt2.sequenceOfNodes[secondNodeIndex + 1]
+                                    if secondNodeIndex + 1 < len(rt2.sequenceOfNodes)
+                                    else None
+                                )
 
                                 a3 = rt3.sequenceOfNodes[thirdNodeIndex - 1]
                                 b3 = rt3.sequenceOfNodes[thirdNodeIndex]
-                                c3 = rt3.sequenceOfNodes[thirdNodeIndex + 1]
+                                c3 = (
+                                    rt3.sequenceOfNodes[thirdNodeIndex + 1]
+                                    if thirdNodeIndex + 1 < len(rt3.sequenceOfNodes)
+                                    else None
+                                )
 
                                 # Check capacity constraints
-                                if (rt1.load - b1.demand + b2.demand + b3.demand > self.capacity or
-                                    rt2.load - b2.demand + b1.demand + b3.demand > self.capacity or
-                                    rt3.load - b3.demand + b1.demand + b2.demand > self.capacity):
+                                if (
+                                    rt1.load - b1.demand + b2.demand + b3.demand > self.capacity
+                                    or rt2.load - b2.demand + b1.demand + b3.demand > self.capacity
+                                    or rt3.load - b3.demand + b1.demand + b2.demand > self.capacity
+                                ):
                                     continue
 
                                 # Calculate cost changes
-                                costRemoved1 = self.matrix[a1.ID][b1.ID] + self.matrix[b1.ID][c1.ID]
-                                costAdded1 = self.matrix[a1.ID][b2.ID] + self.matrix[b2.ID][c1.ID]
+                                costRemoved1 = self.matrix[a1.ID][b1.ID] + (self.matrix[b1.ID][c1.ID] if c1 else 0)
+                                costAdded1 = self.matrix[a1.ID][b2.ID] + (self.matrix[b2.ID][c1.ID] if c1 else 0)
 
-                                costRemoved2 = self.matrix[a2.ID][b2.ID] + self.matrix[b2.ID][c2.ID]
-                                costAdded2 = self.matrix[a2.ID][b3.ID] + self.matrix[b3.ID][c2.ID]
+                                costRemoved2 = self.matrix[a2.ID][b2.ID] + (self.matrix[b2.ID][c2.ID] if c2 else 0)
+                                costAdded2 = self.matrix[a2.ID][b3.ID] + (self.matrix[b3.ID][c2.ID] if c2 else 0)
 
-                                costRemoved3 = self.matrix[a3.ID][b3.ID] + self.matrix[b3.ID][c3.ID]
-                                costAdded3 = self.matrix[a3.ID][b1.ID] + self.matrix[b1.ID][c3.ID]
+                                costRemoved3 = self.matrix[a3.ID][b3.ID] + (self.matrix[b3.ID][c3.ID] if c3 else 0)
+                                costAdded3 = self.matrix[a3.ID][b1.ID] + (self.matrix[b1.ID][c3.ID] if c3 else 0)
 
                                 costChangeFirstRoute = costAdded1 - costRemoved1
                                 costChangeSecondRoute = costAdded2 - costRemoved2
@@ -740,6 +846,8 @@ class Solver:
 
                                 moveCost = costChangeFirstRoute + costChangeSecondRoute + costChangeThirdRoute
 
+                                # Debugging: Monitor the evaluated swaps
+                                
                                 # Update the best move if it's better
                                 if moveCost < tsm.moveCost:
                                     self.StoreBestTripleSwapMove(
@@ -748,3 +856,119 @@ class Solver:
                                         moveCost, costChangeFirstRoute, costChangeSecondRoute, costChangeThirdRoute, tsm
                                     )
 
+
+
+
+    def StoreBestTripleRelocationMove(
+            self, firstRouteIndex, secondRouteIndex, thirdRouteIndex,
+            firstNodeIndex, secondNodeIndex, thirdNodeIndex,
+            moveCost, costChangeFirstRoute, costChangeSecondRoute, costChangeThirdRoute, trm
+        ):
+            trm.positionOfFirstRoute = firstRouteIndex
+            trm.positionOfSecondRoute = secondRouteIndex
+            trm.positionOfThirdRoute = thirdRouteIndex
+            trm.positionOfFirstNode = firstNodeIndex
+            trm.positionOfSecondNode = secondNodeIndex
+            trm.positionOfThirdNode = thirdNodeIndex
+            trm.moveCost = moveCost
+            trm.costChangeFirstRoute = costChangeFirstRoute
+            trm.costChangeSecondRoute = costChangeSecondRoute
+            trm.costChangeThirdRoute = costChangeThirdRoute
+    def ApplyTripleSwapMove(self, tsm):
+        rt1: Route = self.sol.routes[tsm.positionOfFirstRoute]
+        rt2: Route = self.sol.routes[tsm.positionOfSecondRoute]
+        rt3: Route = self.sol.routes[tsm.positionOfThirdRoute]
+ 
+        # Nodes to swap
+        b1 = rt1.sequenceOfNodes[tsm.positionOfFirstNode]
+        b2 = rt2.sequenceOfNodes[tsm.positionOfSecondNode]
+        b3 = rt3.sequenceOfNodes[tsm.positionOfThirdNode]
+ 
+        # Perform the swap
+        rt1.sequenceOfNodes[tsm.positionOfFirstNode] = b2
+        rt2.sequenceOfNodes[tsm.positionOfSecondNode] = b3
+        rt3.sequenceOfNodes[tsm.positionOfThirdNode] = b1
+ 
+        # Update the routes
+        self.UpdateRouteCostAndLoad(rt1)
+        self.UpdateRouteCostAndLoad(rt2)
+        self.UpdateRouteCostAndLoad(rt3)
+ 
+        # Update the solution cost
+        self.sol.total_cost += tsm.moveCost
+    
+    
+    def ApplyTripleRelocationMove(self, trm):
+        rt1: Route = self.sol.routes[trm.positionOfFirstRoute]
+        rt2: Route = self.sol.routes[trm.positionOfSecondRoute]
+        rt3: Route = self.sol.routes[trm.positionOfThirdRoute]
+ 
+        # Nodes to relocate
+        B = rt1.sequenceOfNodes.pop(trm.positionOfFirstNode)
+        G = rt2.sequenceOfNodes.pop(trm.positionOfSecondNode)
+ 
+        # Relocate nodes
+        rt2.sequenceOfNodes.insert(trm.positionOfSecondNode, B)
+        rt3.sequenceOfNodes.insert(trm.positionOfThirdNode, G)
+ 
+        # Update costs and loads
+        self.UpdateRouteCostAndLoad(rt1)
+        self.UpdateRouteCostAndLoad(rt2)
+        self.UpdateRouteCostAndLoad(rt3)
+ 
+        # Update total solution cost
+        self.sol.total_cost += trm.moveCost
+                            
+    def FindBestTripleRelocationMove(self, trm):
+        for firstRouteIndex in range(len(self.sol.routes)):
+            rt1: Route = self.sol.routes[firstRouteIndex]
+            for secondRouteIndex in range(len(self.sol.routes)):
+                rt2: Route = self.sol.routes[secondRouteIndex]
+                for thirdRouteIndex in range(len(self.sol.routes)):
+                    rt3: Route = self.sol.routes[thirdRouteIndex]
+ 
+                    for firstNodeIndex in range(1, len(rt1.sequenceOfNodes) - 1):
+                        for secondNodeIndex in range(1, len(rt2.sequenceOfNodes) - 1):
+                            for thirdNodeIndex in range(1, len(rt3.sequenceOfNodes) - 1):
+ 
+                                A = rt1.sequenceOfNodes[firstNodeIndex - 1]
+                                B = rt1.sequenceOfNodes[firstNodeIndex]
+                                C = rt1.sequenceOfNodes[firstNodeIndex + 1]
+ 
+                                F = rt2.sequenceOfNodes[secondNodeIndex - 1]
+                                G = rt2.sequenceOfNodes[secondNodeIndex]
+                                H = rt2.sequenceOfNodes[secondNodeIndex + 1]
+ 
+                                J = rt3.sequenceOfNodes[thirdNodeIndex - 1]
+                                K = rt3.sequenceOfNodes[thirdNodeIndex]
+                                L = rt3.sequenceOfNodes[thirdNodeIndex + 1]
+ 
+                                # Check capacity constraints
+                                if (rt2.load + B.demand > self.capacity or
+                                    rt3.load + G.demand > self.capacity or
+                                    rt1.load - B.demand - G.demand > self.capacity):
+                                    continue
+ 
+                                # Calculate cost changes
+                                costAdded1 = self.matrix[A.ID][C.ID]
+                                costRemoved1 = self.matrix[A.ID][B.ID] + self.matrix[B.ID][C.ID]
+ 
+                                costAdded2 = self.matrix[F.ID][B.ID] + self.matrix[B.ID][H.ID]
+                                costRemoved2 = self.matrix[F.ID][G.ID] + self.matrix[G.ID][H.ID]
+ 
+                                costAdded3 = self.matrix[J.ID][G.ID] + self.matrix[G.ID][L.ID]
+                                costRemoved3 = self.matrix[J.ID][K.ID] + self.matrix[K.ID][L.ID]
+ 
+                                costChangeFirstRoute = costAdded1 - costRemoved1
+                                costChangeSecondRoute = costAdded2 - costRemoved2
+                                costChangeThirdRoute = costAdded3 - costRemoved3
+ 
+                                moveCost = costChangeFirstRoute + costChangeSecondRoute + costChangeThirdRoute
+ 
+                                # Update the best move if it's better
+                                if moveCost < trm.moveCost:
+                                    self.StoreBestTripleRelocationMove(
+                                        firstRouteIndex, secondRouteIndex, thirdRouteIndex,
+                                        firstNodeIndex, secondNodeIndex, thirdNodeIndex,
+                                        moveCost, costChangeFirstRoute, costChangeSecondRoute, costChangeThirdRoute, trm
+                                    )
