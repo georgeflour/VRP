@@ -237,7 +237,7 @@ class Solver:
         temperature = 1000
         cooling_rate = 0.995
         min_temperature = 1e-3
-        max_iterations = 100
+        max_iterations = 200
         self.bestSolution = self.cloneSolution(self.sol)
         print(self.bestSolution.total_cost)
         localSearchIterator=0
@@ -269,13 +269,13 @@ class Solver:
                 self.FindBestTwoOptMove(top)
                 if top.positionOfFirstRoute is not None and (top.moveCost < 0 or random.random() < self.acceptance_probability(rm.moveCost, temperature)):
                     self.ApplyTwoOptMove(top)
-            elif operator == 3 and localSearchIterator % 2 == 0:
+            elif operator == 3 and localSearchIterator % 3 == 0:
                 self.FindBestTripleSwapMove(tsm)
                 if sm.positionOfFirstRoute is not None:
                     
                     if sm.moveCost < 0 or random.random() < self.acceptance_probability(rm.moveCost, temperature):
                         self.ApplyTripleSwapMove(tsm)
-            elif operator == 4:
+            elif operator == 4 and localSearchIterator % 3 == 0:
                 self.FindBestTripleRelocationMove(trm)
                 if trm.positionOfFirstRoute is not None:
                     if trm.moveCost < 0 or random.random() < self.acceptance_probability(trm.moveCost, temperature):
