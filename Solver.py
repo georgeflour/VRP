@@ -2,11 +2,12 @@ import random
 from Model import *
 from SolutionDrawer import *
 
-# Κλάση που ορίζει την αλληλουχία των κόμβων και το κόστος      
 class Solution:
     def __init__(self):
-        self.routes = []  # Λίστα που αποθηκεύει τις διαδρομές για κάθε φορτηγό
-        self.total_cost = 0  # Συνολικό κόστος της λύσης
+        self.routes = []
+        self.total_cost = 0
+
+
 
 class TripleSwapMove(object):
     def __init__(self):
@@ -76,6 +77,7 @@ class TripleRelocationMove:
         self.costChangeFirstRoute = None
         self.costChangeSecondRoute = None
         self.costChangeThirdRoute = None
+        
 class SwapMove(object):
     def __init__(self):
         self.positionOfFirstRoute = None
@@ -143,7 +145,7 @@ class Solver:
         
 
         self.LocalSearch()
-        self.LocalSearch()
+        
 
         SolDrawer.draw(1, self.sol, self.allNodes)
         self.ReportSolution(self.sol)
@@ -176,13 +178,23 @@ class Solver:
                     current_node = candidate_node
                 else:
                     break
+            
 
             # Remove the depot as the last node for this route
             route.total_cost, route.load = self.calculate_route_details(route.sequenceOfNodes, self.empty_vehicle_weight)
             sol.routes.append(route)
             sol.total_cost += route.total_cost
 
+        for i in range(3):
+            route = Route(self.depot, self.capacity)
+            route.total_cost=0
+            route.load=0
+            sol.routes.append(route)
+            sol.total_cost += route.total_cost
+
         return sol
+    
+    
 
     def find_min_distance_for_i(self, i, visited_nodes):
         min_distance = float('inf')
@@ -232,6 +244,7 @@ class Solver:
         cloned.total_cost = rt.total_cost
         cloned.load = rt.load
         return cloned
+    
     def LocalSearch(self):
         random.seed(1)
         temperature = 1000
@@ -246,19 +259,16 @@ class Solver:
         sm = SwapMove()
         top = TwoOptMove()
         tsm=TripleSwapMove()
-
         
 
-        while temperature > min_temperature and localSearchIterator < max_iterations:  # Perform local search until no improvement
+        while temperature > min_temperature and localSearchIterator < max_iterations:
             self.InitializeOperators(rm, sm, top,tsm,trm)
             operator = random.randint(0, 4)
-            # Relocations
             if operator == 0:
                 self.FindBestRelocationMove(rm)
                 if rm.originRoutePosition is not None:
                     if rm.moveCost < 0 or random.random() < self.acceptance_probability(rm.moveCost, temperature):
                         self.ApplyRelocationMove(rm)
-                # Swaps
             elif operator == 1:
                 self.FindBestSwapMove(sm)
                 if sm.positionOfFirstRoute is not None:
@@ -280,6 +290,7 @@ class Solver:
                 if trm.positionOfFirstRoute is not None:
                     if trm.moveCost < 0 or random.random() < self.acceptance_probability(trm.moveCost, temperature):
                         self.ApplyTripleRelocationMove(trm)
+    
             self.sol.total_cost = self.CalculateTotalCost(self.sol)
             self.TestSolution()
 
@@ -292,6 +303,9 @@ class Solver:
                 print(f"Iteration {localSearchIterator}, Temperature: {temperature:.4f}, Best Cost: {self.bestSolution.total_cost}")
 
         self.sol = self.bestSolution
+
+
+                
     def acceptance_probability(self, moveCost, temperature):
         return min(1, math.exp(-moveCost / temperature))
 
@@ -302,9 +316,8 @@ class Solver:
 
                 for targetRouteIndex in range(len(self.sol.routes)):
                     rt2: Route = self.sol.routes[targetRouteIndex]
-                    for targetNodeIndex in range(len(rt2.sequenceOfNodes)):  # Include position after the depot
+                    for targetNodeIndex in range(len(rt2.sequenceOfNodes)):
 
-                        # Avoid invalid moves within the same route
                         if originRouteIndex == targetRouteIndex and (
                             targetNodeIndex == originNodeIndex or targetNodeIndex == originNodeIndex - 1
                         ):
@@ -325,18 +338,16 @@ class Solver:
                             else None
                         )
 
-                        # Special case: Moving B between the depot and the first node
                         if targetNodeIndex == 0:
                             G = rt2.sequenceOfNodes[1] if len(rt2.sequenceOfNodes) > 1 else None
 
-                        # Calculate the costs
-                        costAdded = self.matrix[A.ID][C.ID] if C else 0
-                        costAdded += self.matrix[F.ID][B.ID]
-                        costAdded += self.matrix[B.ID][G.ID] if G else 0
+                        costAdded = self.matrix[A.ID][C.ID] + A.demand if C else 0
+                        costAdded += self.matrix[F.ID][B.ID] + F.demand
+                        costAdded += self.matrix[B.ID][G.ID] + B.demand if G else 0
 
-                        costRemoved = self.matrix[A.ID][B.ID]
-                        costRemoved += self.matrix[B.ID][C.ID] if C else 0
-                        costRemoved += self.matrix[F.ID][G.ID] if G else 0
+                        costRemoved = self.matrix[A.ID][B.ID] + A.demand
+                        costRemoved += self.matrix[B.ID][C.ID] + B.demand if C else 0
+                        costRemoved += self.matrix[F.ID][G.ID] + F.demand if G else 0
 
                         originRtCostChange = (
                             self.matrix[A.ID][C.ID] - self.matrix[A.ID][B.ID] - self.matrix[B.ID][C.ID]
@@ -351,11 +362,9 @@ class Solver:
 
                         moveCost = costAdded - costRemoved
 
-                        # Check capacity constraints
                         if rt1 != rt2 and rt2.load + B.demand > rt2.capacity:
                             continue
 
-                        # Update the best relocation move if this one is better
                         if moveCost < rm.moveCost:
                             self.StoreBestRelocationMove(
                                 originRouteIndex,
@@ -367,6 +376,7 @@ class Solver:
                                 targetRtCostChange,
                                 rm,
                             )
+
 
 
     def FindBestSwapMove(self, sm):
@@ -404,21 +414,21 @@ class Solver:
                             if firstNodeIndex == secondNodeIndex - 1:
                                 # Case of consecutive nodes swap
                                 costRemoved = (
-                                    self.matrix[a1.ID][b1.ID]
-                                    + self.matrix[b1.ID][b2.ID]
-                                    + (self.matrix[b2.ID][c2.ID] if c2 else 0)
+                                    self.matrix[a1.ID][b1.ID] + a1.demand
+                                    + self.matrix[b1.ID][b2.ID] + b1.demand
+                                    + (self.matrix[b2.ID][c2.ID] + b2.demand if c2 else 0)
                                 )
                                 costAdded = (
-                                    self.matrix[a1.ID][b2.ID]
-                                    + self.matrix[b2.ID][b1.ID]
-                                    + (self.matrix[b1.ID][c2.ID] if c2 else 0)
+                                    self.matrix[a1.ID][b2.ID] + a1.demand
+                                    + self.matrix[b2.ID][b1.ID] + b2.demand
+                                    + (self.matrix[b1.ID][c2.ID] + b1.demand if c2 else 0)
                                 )
                                 moveCost = costAdded - costRemoved
                             else:
-                                costRemoved1 = self.matrix[a1.ID][b1.ID] + (self.matrix[b1.ID][c1.ID] if c1 else 0)
-                                costAdded1 = self.matrix[a1.ID][b2.ID] + (self.matrix[b2.ID][c1.ID] if c1 else 0)
-                                costRemoved2 = self.matrix[a2.ID][b2.ID] + (self.matrix[b2.ID][c2.ID] if c2 else 0)
-                                costAdded2 = self.matrix[a2.ID][b1.ID] + (self.matrix[b1.ID][c2.ID] if c2 else 0)
+                                costRemoved1 = self.matrix[a1.ID][b1.ID] + a1.demand + (self.matrix[b1.ID][c1.ID] if c1 else 0)
+                                costAdded1 = self.matrix[a1.ID][b2.ID] + a1.demand + (self.matrix[b2.ID][c1.ID] if c1 else 0)
+                                costRemoved2 = self.matrix[a2.ID][b2.ID] + a2.demand + (self.matrix[b2.ID][c2.ID] if c2 else 0)
+                                costAdded2 = self.matrix[a2.ID][b1.ID] + a2.demand + (self.matrix[b1.ID][c2.ID] if c2 else 0)
                                 moveCost = costAdded1 + costAdded2 - (costRemoved1 + costRemoved2)
                         else:
                             if rt1.load - b1.demand + b2.demand > self.capacity:
@@ -426,10 +436,10 @@ class Solver:
                             if rt2.load - b2.demand + b1.demand > self.capacity:
                                 continue
 
-                            costRemoved1 = self.matrix[a1.ID][b1.ID] + (self.matrix[b1.ID][c1.ID] if c1 else 0)
-                            costAdded1 = self.matrix[a1.ID][b2.ID] + (self.matrix[b2.ID][c1.ID] if c1 else 0)
-                            costRemoved2 = self.matrix[a2.ID][b2.ID] + (self.matrix[b2.ID][c2.ID] if c2 else 0)
-                            costAdded2 = self.matrix[a2.ID][b1.ID] + (self.matrix[b1.ID][c2.ID] if c2 else 0)
+                            costRemoved1 = self.matrix[a1.ID][b1.ID] + a1.demand+ (self.matrix[b1.ID][c1.ID] if c1 else 0)
+                            costAdded1 = self.matrix[a1.ID][b2.ID] + a1.demand + (self.matrix[b2.ID][c1.ID] if c1 else 0)
+                            costRemoved2 = self.matrix[a2.ID][b2.ID] + a2.demand + (self.matrix[b2.ID][c2.ID] if c2 else 0)
+                            costAdded2 = self.matrix[a2.ID][b1.ID] + a2.demand + (self.matrix[b1.ID][c2.ID] if c2 else 0)
 
                             costChangeFirstRoute = costAdded1 - costRemoved1
                             costChangeSecondRoute = costAdded2 - costRemoved2
@@ -548,6 +558,8 @@ class Solver:
         sm.total_costChangeFirstRt = costChangeFirstRoute
         sm.total_costChangeSecondRt = costChangeSecondRoute
         sm.moveCost = moveCost
+        
+
 
     def CalculateTotalCost(self, sol):
         total_cost = 0
@@ -831,14 +843,14 @@ class Solver:
                                     continue
 
                                 # Calculate cost changes
-                                costRemoved1 = self.matrix[a1.ID][b1.ID] + (self.matrix[b1.ID][c1.ID] if c1 else 0)
-                                costAdded1 = self.matrix[a1.ID][b2.ID] + (self.matrix[b2.ID][c1.ID] if c1 else 0)
+                                costRemoved1 = self.matrix[a1.ID][b1.ID] + a1.demand + (self.matrix[b1.ID][c1.ID] + b1.demand if c1 else 0)
+                                costAdded1 = self.matrix[a1.ID][b2.ID] + a1.demand + (self.matrix[b2.ID][c1.ID]  + b2.demand if c1 else 0)
 
-                                costRemoved2 = self.matrix[a2.ID][b2.ID] + (self.matrix[b2.ID][c2.ID] if c2 else 0)
-                                costAdded2 = self.matrix[a2.ID][b3.ID] + (self.matrix[b3.ID][c2.ID] if c2 else 0)
+                                costRemoved2 = self.matrix[a2.ID][b2.ID] + a2.demand + (self.matrix[b2.ID][c2.ID] + b2.demand if c2 else 0)
+                                costAdded2 = self.matrix[a2.ID][b3.ID] + a2.demand + (self.matrix[b3.ID][c2.ID] + b3.demand if c2 else 0)
 
-                                costRemoved3 = self.matrix[a3.ID][b3.ID] + (self.matrix[b3.ID][c3.ID] if c3 else 0)
-                                costAdded3 = self.matrix[a3.ID][b1.ID] + (self.matrix[b1.ID][c3.ID] if c3 else 0)
+                                costRemoved3 = self.matrix[a3.ID][b3.ID] + a3.demand + (self.matrix[b3.ID][c3.ID] + b3.demand if c3 else 0)
+                                costAdded3 = self.matrix[a3.ID][b1.ID] + a3.demand + (self.matrix[b1.ID][c3.ID] + b1.demand if c3 else 0)
 
                                 costChangeFirstRoute = costAdded1 - costRemoved1
                                 costChangeSecondRoute = costAdded2 - costRemoved2
@@ -874,6 +886,7 @@ class Solver:
             trm.costChangeFirstRoute = costChangeFirstRoute
             trm.costChangeSecondRoute = costChangeSecondRoute
             trm.costChangeThirdRoute = costChangeThirdRoute
+            
     def ApplyTripleSwapMove(self, tsm):
         rt1: Route = self.sol.routes[tsm.positionOfFirstRoute]
         rt2: Route = self.sol.routes[tsm.positionOfSecondRoute]
@@ -950,14 +963,14 @@ class Solver:
                                     continue
  
                                 # Calculate cost changes
-                                costAdded1 = self.matrix[A.ID][C.ID]
-                                costRemoved1 = self.matrix[A.ID][B.ID] + self.matrix[B.ID][C.ID]
+                                costAdded1 = self.matrix[A.ID][C.ID] + A.demand
+                                costRemoved1 = self.matrix[A.ID][B.ID] + A.demand + self.matrix[B.ID][C.ID] + B.demand
  
-                                costAdded2 = self.matrix[F.ID][B.ID] + self.matrix[B.ID][H.ID]
-                                costRemoved2 = self.matrix[F.ID][G.ID] + self.matrix[G.ID][H.ID]
+                                costAdded2 = self.matrix[F.ID][B.ID] + F.demand + self.matrix[B.ID][H.ID] + B.demand
+                                costRemoved2 = self.matrix[F.ID][G.ID] + F.demand + self.matrix[G.ID][H.ID] + G.demand
  
-                                costAdded3 = self.matrix[J.ID][G.ID] + self.matrix[G.ID][L.ID]
-                                costRemoved3 = self.matrix[J.ID][K.ID] + self.matrix[K.ID][L.ID]
+                                costAdded3 = self.matrix[J.ID][G.ID] + J.demand + self.matrix[G.ID][L.ID] + G.demand
+                                costRemoved3 = self.matrix[J.ID][K.ID] + J.demand + self.matrix[K.ID][L.ID] + K.demand
  
                                 costChangeFirstRoute = costAdded1 - costRemoved1
                                 costChangeSecondRoute = costAdded2 - costRemoved2
