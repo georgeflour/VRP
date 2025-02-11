@@ -37,4 +37,6 @@ The optimal set of routes for the vehicles to visit all customers while minimizi
 
 ## Contributors
 -  **[Fanis Orfanoudakis](https://github.com/fanisorfan)**
+-  **[Panagiotis Anastopoulos](https://github.com/panagiotisanastopoulos)**
+  
 
